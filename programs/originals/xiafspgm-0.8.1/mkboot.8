@@ -1,0 +1,110 @@
+.TH MKBOOT 8 "14 March 1993"
+.SH NAME
+mkboot - install kernel image and make a system bootable
+.SH SYNOPSIS
+.B mkboot  [-fr root-dev] block-dev
+
+.B mkboot  -M disk-dev [-partition-number OS-name]
+.SH DESCRIPTION
+The command
+.I mkboot 
+can only be used by the super-user.
+ 
+.I mkboot, 
+by default, puts a secondary booter at the first sector of a partition with 
+xiafs file system specified by
+.I block-dev
+and installs a kernel image in the space reserved for it in the xiafs.
+The reserved space should be at least as big as the kernel image.
+For future kernel upgrade, 512KB reserved space for kernel image is 
+recommanded for bootable hard disk partitions.
+.I mkboot, 
+by default, changes the root device to
+.I block-dev.
+.I mkboot 
+provides the secondary booter. The kernel image is read from the
+stardard input. 
+The default can be changed by using following options.
+
+.SH OPTIONS
+.I mkboot
+has the following options:
+.TP
+.B -f root-dev
+Force 
+.I root-dev 
+as root device
+.TP
+.B -r root-dev
+Install secondary booter and the kernel image on the raw device
+.I block-dev
+and use 
+.I root-dev 
+as root device. This option make the booter work with any file system.
+One may make a small partition for this purpose. 512KB is recommanded. 
+.TP
+.B -M disk-dev
+If there are at least one
+.I -partition-number OS-name
+option, the 
+.I mkboot 
+installs the master booter, otherwise a traditional master booter
+is restored in the first sector
+of the first disk specified by 
+.I disk-dev.
+The master booter is provided by mkboot.
+For the reason which will become clear soon,
+.I mkboot 
+does not check if
+.I disk-dev 
+is the first hard disk.
+.TP 
+.B -partition-number OS-name
+Where, 
+.I partition-number 
+ranges from 1 to 4.
+This option is used with option
+.I -M disk-dev.
+This option specifies the bootable partition and its name one want to
+see in the menu displayed by the master booter during booting.
+One can specifies at most four bootable partitions. The name of the 
+OS' can be as long as 15 charactors.
+
+.SH EXAMPLE
+This example installs the secondary booter and the kernel image
+on the hda2, making /dev/hda2 as the root device.
+
+.nf
+# mkxfs -k 512 /dev/hda2 16000
+# mkboot /dev/hda2 < zImage
+.fi
+
+This example installs the secondary booter and the kernel image
+on the raw hda2, making /dev/hdb1 as the root device. Note that
+contants of hda2 is over wrotten by the booter and the image
+since this is installing on the raw device.
+
+.nf
+# mkboot -r /dev/hdb1  /dev/hda2 < zImage
+.fi
+
+To install the master booter, additional care may be taken to avoid
+the possible disaster. First make a floppy to simulate the installation.
+
+.nf
+# dd if=/dev/hda of=/dev/fd0 bs=512 count=1
+# mkboot  -M /dev/fd0  -2 "LINUX 0.99.7" -3 "LINUX 0.99.6" -1 MS-DOS
+.fi 
+
+Then reboot the machine with the floppy in "drive A:".
+If it works, do it on hard drive.
+
+.nf
+# mkboot  -M /dev/hda  -2 "LINUX 0.99.7" -3 "OLD LINUX" -1 MS-DOS
+.fi
+
+.SH AUTHOR
+Q. Frank Xia (qx@math.columbia.edu)
+.SH SEE ALSO
+mkxfs(8).
+

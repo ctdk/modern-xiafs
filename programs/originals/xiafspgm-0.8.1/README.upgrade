@@ -1,0 +1,33 @@
+
+
+
+Which version of xiafspgm works with which kernel version ?	
+	xiafspgm 0.8, 0.8.1 work with Linux/xiafs-0.7.3, Linux-0.99.7A.
+	xiafspgm 0.7.1 works with xiafs-0.7.3 and/or earlier version. 
+
+!!! DO NOT USE xiafspgm-0.7.1 OR EARLIER VERSION AFTER YOU HAVE RUN 
+(0.8/0.8.1) xfsck.
+
+To upgrade to Linux-0.99.7A/xiafspgm-0.8.1, do
+
+1). Compile 0.99.7A kernel and xiafspgm-0.8.1 under any version.
+
+2). Install the kernel (one may use mkboot included in xiafspgm-0.8.1).
+
+3). Boot the new kernel, and make sure the new kernel works for you.
+
+4). Run (0.8.1) "xfsck -a /dev/xxx", xfsck will report many "bad i_blocks".
+    You can safely ignore this error message when you run xfsck first
+    time.
+    
+5). replace old xiafs and xfsck with new ones.
+
+
+
+If you want to check filesystem during booting, put "xfsck -r <whatever>"
+in "/etc/rc". In any case, do not use "xfsck -a" unless you know what
+you are doing.
+
+
+
+***********  type "make xiafspgm" to compile  ******************

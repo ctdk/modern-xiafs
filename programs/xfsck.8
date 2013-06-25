@@ -1,0 +1,78 @@
+.TH XFSCK 8 "20 February 1993"
+.SH NAME
+xfsck - xiafs file system consistency check and repair
+.SH SYNOPSIS
+.B xfsck
+.B [-a|-k|-r|-s] device
+.SH DESCRIPTION
+The command 
+.I xfsck
+checks the consistency of xiafs file systems. Inconsistencies of xiafs
+file systems may be caused by an improper shutdown of the system.
+
+To do a repair in case inconsistencies are found, the file system
+should be unmounted if it is not the root device. If it is the root
+device, the system should be in single-user mode and the file system
+should be synchronized. Run xfsck until it stops reporting errors.
+If it is the root device, reboot or shutdown the system right after
+the repair.
+
+Repairing can only be done by the super-user.
+
+Inconsistencies checked in order are as follows:
+.TP
+- 
+Bad directory size and bad directory entry.
+.TP
+- 
+Blocks claimed by an inode outside the range of the file system.
+.TP
+- 
+Blocks claimed by more than one inode or the free list, or blocks claimed 
+by no inode and free list.
+.TP
+- 
+Incorrect link counts.
+
+.SH OPTIONS
+.I xfsck
+has the following options:
+.TP
+.B -a
+This option makes
+.I xfsck 
+repair the damage automatically.
+.TP
+.B -k
+This option checks the super block, read the kernel image installed by
+mkboot(8) and write it to the standard output. The output can be fed
+into mkboot(8) to make a new installation.
+.TP
+.B -r 
+.I xfsck 
+prompts for repair. One may answer
+.I y
+for repair
+.I n 
+for no repair, or 
+.I a
+for automatic repair.
+.TP
+.B -s
+Check super block and display the super block information and bad blocks
+on standard output.
+.SH EXAMPLE
+
+.nf
+# umount /dev/hda3      % hda3 is not a root device
+# xfsck /dev/hda3
+
+# sync /dev/hda1        % hda1 is a root device
+# xfsck /dev/hda1
+# shutdown now          % if the file system is modified.
+.fi
+
+.SH AUTHOR
+Q. Frank Xia (qx@math.columbia.edu)
+.SH SEE ALSO
+mkboot(8), mkxfs(8), umount(8), shutdown(8), sync(1).

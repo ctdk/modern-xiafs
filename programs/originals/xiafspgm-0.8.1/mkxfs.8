@@ -1,0 +1,79 @@
+.TH MKXFS 8 "20 February 1993"
+.SH NAME
+mkxfs - make a xiafs file system
+.SH SYNOPSIS
+.B mkxfs
+.B [-c | -l file] [-k blocks] [-z blocks] device blocks
+.SH DESCRIPTION
+The command 
+.I mkxfs
+makes a xiafs file system on a low level formatted block device
+.I device. 
+The numeric argument
+.I blocks
+specifies the number of blocks in the file system. In this context, a
+block is a 1024-byte piece of disk storage, usually occupying 2 
+physical disk sectors. Blocks are grouped into zones. A zone is 
+the smallest amount of device space that can be allocated to a file.
+The default zone size is 1024 bytes, i.e., a single block.
+.I mkxfs
+builds a xiafs file system with a root directory. i-node 2 is reserved 
+for bad blocks. The number of inodes is calculated as a function of 
+the file system size. Currently one i-node is allocated for every four
+zones.
+
+This command can only be used by the super-user.
+
+.SH OPTIONS
+.I mkxfs
+has the following options:
+.TP
+.B -c 
+.I mkxfs
+checks bad blocks and links them to i-node 2.  
+a file 
+.I badblocks.log 
+is created in the current directory by
+.I mkxfs
+for recording. 
+.TP
+.B -l file 
+.I mkxfs 
+reads bad block numbers from the file
+.I file 
+and links them to i-node 2.
+.I file
+is an ASCII file and each line contains a single bad block number.
+.TP
+.B -k blocks
+reserves 
+.I blocks
+block for kernel image. This reserved space could be used by a simple 
+booter. However, the reserved space is not initialized by
+.I mkxfs. 
+Mkboot(8) may be used to install a kernel image in the reserved space.
+.TP 
+.B -z blocks
+This option specifies the zone size. The default is one block (1024
+bytes). 
+The numeric argument
+.I blocks 
+may be 2 or 4. Currently only the default value is supported by the kernel.
+
+.SH EXAMPLE
+.nf
+# mkxfs /dev/fd0 1440           % make a xiafs file system
+# mkxfs -c /dev/hda3 150000     % check bad blocks and make 
+                                % a xiafs file system on hda3
+# mkxfs -k 512 /dev/hda1 20000  % make a xiafs file system
+                                % with 512 KB reserved.
+.fi
+.SH AUTHOR
+Q. Frank Xia (qx@math.columbia.edu)
+.SH SEE ALSO
+mkboot(8), xfsck(8).
+.SH BUGS
+Currently, the Linux kernel only supports xiafs with one-block
+zone size. 
+The ratio of blocks-per-inode (currently 4) should be selectable
+through a commandline argument.

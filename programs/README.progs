@@ -1,0 +1,79 @@
+This directory contains xfsck and mkxfs (NOT to be confused with the programs 
+used for maintaining the completly different XFS). They were adapted from the 
+xiafspgm-0.8.1.tar.gz and xfspgm-patch-2.diff.gz files grabbed from Slackware 
+3.5 off the Internet, and ported to a modern Linux. These programs were old 
+when they were included in Slackware 3.5, and that came out 15 years ago. Some 
+work had to be done to port them to a modern system.
+
+Links are also installed for these programs as fsck.xiafs and mkfs.xiafs, along
+with man pages under all of their names. This is good, because their command
+line help isn't very helpful..
+
+NB: xiafspgm-0.8.1 also included a program called "mkboot" that would make a 
+simple bootloader. I have not included it here since it was unnecessary and 
+there wasn't much reason to port it. You could say that about this entire 
+project to get Xiafs working on a modern Linux system, of course.
+
+The original xfsck and mkxfs programs are copyright 1992 Q. Frank Xia, and bear 
+this notice:
+
+/**************************************************************************
+ * (C) Copyright Q. Frank Xia, 1992.  All rights reserved.                *
+ *                                                                        *
+ * Permission to use and redistribute this software is hereby granted     *
+ * provided that the following conditions are met:                        *
+ * 1. Source code redistribution must retain this statement.              *
+ * 2. Binary redistribution must reproduce this statement in the          *
+ *    documentation provided with the distribution.                       *
+ * 3. This software is provided by author Q. Frank Xia "as is". There     *
+ *    are absolutely no warranties at all. The author is not responsible  *
+ *    for any possible damages caused by using this software.             *
+ **************************************************************************/
+
+The original xia.README attached to the original xfspgm-patch-2.diff file is below.
+
+----
+PATCH FOR XIA UTILITIES 
+Copyright (c) 1996 Thomas McWilliams
+Distributed under terms of GNU GENERAL PUBLIC LICENSE Version 2
+
+This patch is to bring the building and installation of the Xia 
+filesystem utilities into compliance with current Linux filesystem 
+standards. There are no functional changes to the utilities other
+than fixing some mismatched printf() arguments in xfsck.c.
+
+To patch the original source code, place the files "xfspgm-patch-2" and
+"apply-patch.sh" in the same directory with "xiafspgm-0.8.1.z". 
+Then you can either run the shell script "apply-patch.sh" to automatically
+invoke patch,  OR you can run patch manually: 
+       tar zxvf xiafspgm-0.8.1.z
+       patch -p0 < xfspgm-patch-2 2>&1 | tee patch-2.log.
+ 
+The author of these utilities and of the Xia filesystem is Frank Xia.
+He seems to have dropped out of sight, but his e-mail address was (is?)
+qx@math.columbia.edu.
+
+I am not actively maintaining any of the Xia code. This patch was only
+motivated by my converting some older Linux systems to ELF.
+
+Thomas McWilliams <tgm@netcom.com>
+July 14, 1996
+----
+
+This patch is already applied here. For reference and to satisfy any needed
+licensing obligation, the originals of both xiafspgm-0.8.1 and 
+xfspgm-patch-2.diff are located in the "originals" directory under this one.
+
+As of the writing of this README file, the files I used to build these tools can
+also be found at this Slackware mirror site:
+
+http://slackware.mirror.ac.za/slackware-3.5/source/a/bin/xfspgm-patch-2.diff.gz
+http://slackware.mirror.ac.za/slackware-3.5/source/a/bin/xia.README
+http://slackware.mirror.ac.za/slackware-3.5/source/a/bin/xiafspgm-0.8.1.tar.gz
+
+If they are unavailable, you should be able to find them at another old
+Slackware mirror.
+
+The changes I made to get these programs compiling and working on a modern Linux
+are copyright 2013, Jeremy Bingham <jbingham@gmail.com>, and are under the GPL 
+as above.

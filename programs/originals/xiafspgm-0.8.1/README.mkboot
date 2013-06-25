@@ -1,0 +1,189 @@
+			README 
+
+			for mkboot
+
+			Q. Frank Xia
+			qx@math.columbia.edu
+			March 20, 1993
+
+
+Mkboot is a small, easy to install and easy to use Linux booter.  
+It is filesystem independent (not really). The binary distribution
+contains nothing but a 13KB mkboot.
+
+
+The procedure of booting:
+	A PC based system is usually booted as following. When
+	power is turned on, the BIOS load the master boot sector 
+	which is the first sector of the first hard disk. The first
+	446 bytes of the master boot sector usually contains a small
+	program and the last 66 bytes contains a partition table and
+	a boot sector signature. The program looks for an "active"
+	partition. Once found, it load the first sector, the secondary
+	booter, of the active partition. Then it gives the control
+	to the secondary booter. It is the secondary booter who
+	take case the rest of the booting.
+
+What mkboot provide ?
+	Mkboot provides both a master booter and a secondary booter.
+	In addition, it also provides a traditional master boot
+	sector, so one can uninstall mkboot. The master booter and
+	the secondary booter mkboot provide are independent. i.e.,
+	the master booter can work with other secondary booter and
+	the secondary booter can work with other master booter.
+
+How to install the master booter ?
+	The syntex for installing master booter is like this.
+
+	# mkboot -M /dev/hda -2 "Linux 0.99.7" -4 "OLD Linux" -1 MS-DOS
+
+	Where, switch "-M" means dealing with master boot sector.
+	"/dev/hda" specifies which special deivce is the first disk.
+	One can fool mkboot by using other block device, so that
+	one can practise on floppy until one is convinced that it is
+	safe to use mkboot with hard disk and that you like it.
+	The switch "-2" "-4" and "-1" specify which partitions are
+	bootable. The partition number ranges from 1 to 4 for the
+	four primary partitions. "Linux 0.99.7", "OLD Linus" and MS-DOS 
+	are the names one gives to bootable systems respectively. They 
+	will be showed on the menu the master booter displays during 
+	booting.
+
+	To uninstall mkboot do
+
+	# mkboot -M /dev/hda
+
+
+How the master booter works ?
+	After the BIOS loads the master booter, the booter diskplays
+	a menu. The entries in the memu is specified by the command
+	line options of mkboot as above. For instance, the booter
+	installed above will show a menu looks like this.
+
+	Frank Xia's Linux Booter v0.8
+
+	    [1]    Linux 0.99.7
+	    [2]	   OLD Linux
+	    [3]	   MS-DOS
+
+	Boot:
+
+	The order of the entries is the same as specified in the command
+	line options. The numbers in the menu has nothing to do with
+	the partition numbers.  The first system is the default one.
+	One can choose one of them to boot. If one hit the key other than
+	all the numbers showed on the menu or no key is hit after 15 seconds,
+	the master booter will boot the default partiton.
+
+How to install the secondary booter ?
+	If you want install the secondary booter and the kernel image
+	in xiafs filesystem on /dev/hda2, do
+	
+	# mkboot /dev/hda2  < zImage
+
+	The xiafs filesystem should reserve at least as much as zImage
+	needed for kernel image. For hard disk, 512KB reserved space
+	is recommanded for future upgrade. For floppy, one just
+	need to reserve as much as zImage need. The default root device
+	is the device you installs secondary booter and the kernel image.
+	If you want use other device as root device you can use seitch "-f".
+	For example, If you want install the booter and the kernel image
+	on /dev/hda2 and use /dev/hdb6 as root device, do
+
+	# mkboot -f /dev/hdb6 /dev/hda2 < zImage
+
+	If you do not have xiafs, you have to use one partition for
+	the secondary booter and the kernel image (there are better
+	approach, see "Things to do" section). You may make a small
+	partition, 512KB is recommanded, for this purpose. For an
+	example, If you want install booter and kernel image on
+	/dev/hda4 and use /dev/hdb1 as root device, do
+
+	# mkboot -r /dev/hdb1 /dev/hda4 < zImage
+
+	Note, if you use "-r" switch, the contants of /dev/hda4 is
+	over written by the booter and the kernel.
+
+How to use mkboot to make a bootable root diskette ?
+	Suppose the size of zImage you made is 180KB, do
+
+	# mkxfs -k 180 /dev/fd0 1440
+	# mkboot /dev/fd0 < zImage
+
+	Where 1440 is the size of filesystem. If your "disk A:" is 1.2MB
+	use 1200. Then you may mount the floppy, make directories and
+	copy necessary file to the floppy.
+	To install Linux on a hard disk from the bootable root diskette,
+	do
+
+	# xfsck -k /dev/fd0 | mkboot <whatever>
+
+	where "xfsck -k <whatever>" reads the kernel from the reserved 
+	space on the diskette and feed it into mkboot.
+
+What caution one should take ?
+	mkboot, as any booter installation program, will write something
+	into the "reserved area" in the filesystem. If mkboot get wrong
+	information, it may trash the filesystem. If you use mkboot
+	without using switch "-M", it at most trash the partition you
+	specified. So make a backup of that partition before installing
+	secondary booter and the kernel image. With switch "-M", it is
+	more dangerous because mkboot will write the master booter to
+	the first sector of the first disk, which contains the partition
+	table. You may do following to avoid the possible damage. 
+
+
+	1. Copy the first sector to a file
+
+		# dd if=/dev/hda of=master.bak bz=512 count=1
+
+	   and save master.bak in a bootable root diskette. In case the
+	   partition table get trashed, you can restore it by booting the
+	   root diskette and do
+	
+	        # dd if=master.bak of=/dev/hda bz=512 count=1
+
+	2. Copy the first sector to a floppy
+
+		# dd if=/dev/hda of=/dev/fd0 bz=512 count=1
+
+	3. Install the master booter on the floppy
+
+		# mkboot -M  <whatever>
+	
+	4. Leave the floppy in the "disk A:", reboot the system.
+	  
+	If it works, you may install the master booter on your hard disk.
+
+Things to do.
+	There are two approaches to the booter. One approaches is to use a
+	sophiscated booter and put the kernel image in a file under root
+	directory or some other directory. The booter has to know more or
+	less the filesystem and/or the geometry of the disk. LILO and
+	Shoelace use this approach. The other approach is to use a simple
+	booter and put the kernel image in a contiguous sectors. This is
+	the approach mkboot use. Since all Linux filesystem except xiafs as 
+	I know does not reserve space for kernel image, there are 
+	difficulties to put kernel image in contiguous sectors. We can get 
+	around this difficulty in two ways. The first one is to use a
+	raw partition as above.
+
+		# mkboot -r /dev/hdb6 /dev/hda4 < zImage
+
+	where /dev/hda4 is used as a raw device. Another way to get around
+	is like this: Make a filesystem, say e2fs, smaller than the partition.
+	The space which is not used by the filesystem is "reserved" for
+	the kernel image. One can put kernel image there.
+
+	The mkboot support the first mathod, namely the raw device. It is
+	not difficult to support the second method. Because I have other
+	higher prioraty things to do, I leave it open. If there are 
+	someone like to hack mkboot to support second method, I will
+	happy to put it into the mkboot.
+
+Limitation.
+	The master booter only support four primary partitions.
+
+--- END of README ---
+
+
