@@ -21,6 +21,7 @@
 /* bitmap.c contains the code that handles the inode and block bitmaps */
 
 #include "xiafs.h"
+#include "bitmap.h"
 #include <linux/buffer_head.h>
 #include <linux/bitops.h>
 #include <linux/sched.h>
