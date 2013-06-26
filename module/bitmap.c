@@ -22,6 +22,7 @@
 
 #include "xiafs.h"
 #include "bitmap.h"
+#include <linux/fs.h>
 #include <linux/buffer_head.h>
 #include <linux/bitops.h>
 #include <linux/sched.h>
@@ -185,7 +186,10 @@ void xiafs_free_inode(struct inode * inode)
 	spin_unlock(&bitmap_lock);
 	mark_buffer_dirty(bh);
  out:
-	clear_inode(inode);		/* clear in-memory copy */
+	/* clear_inode(inode); */		/* clear in-memory copy */
+	/* Somewhat strangely, in 3.2 clear_inode() doesn't exist anymore, but
+	 * it's *back* in 3.8.8 at least. Leaving the old way for reference. */
+	end_writeback(inode);
 }
 
 struct inode * xiafs_new_inode(const struct inode * dir, int * error)
