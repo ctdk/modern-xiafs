@@ -181,9 +181,6 @@ static inline void print_mem(void const *vp, size_t n){
 extern struct inode * xiafs_new_inode(const struct inode * dir, int * error);
 extern void xiafs_free_inode(struct inode * inode);
 extern unsigned long xiafs_count_free_inodes(struct xiafs_sb_info *sbi);
-extern int xiafs_new_zone(struct super_block * sb, u_long prev_addr);
-extern void xiafs_free_zone(struct super_block * sb, int block);
-extern unsigned long xiafs_count_free_zones(struct super_block *sb);
 extern int __xiafs_write_begin(struct file *file, struct address_space *mapping,
 			loff_t pos, unsigned len, unsigned flags,
 			struct page **pagep, void **fsdata);
@@ -198,15 +195,7 @@ extern struct xiafs_direct *xiafs_dotdot(struct inode*, struct page**);
 extern void xiafs_set_link(struct xiafs_direct*, struct page*, struct inode*);
 extern int xiafs_empty_dir(struct inode*);
 
-extern struct buffer_head * xiafs_getblk(struct inode *, int, int);
-extern struct buffer_head * xiafs_bread(struct inode *, int, int);
-
 extern void xiafs_truncate(struct inode *);
-extern struct super_block *xiafs_read_super(struct super_block *,void *,int);
-extern void xiafs_read_inode(struct inode *);
-extern void xiafs_put_inode(struct inode *);
-extern int xiafs_sync_inode(struct inode *);
-extern int xiafs_sync_file(struct inode *, struct file *);
 extern struct inode * xiafs_iget(struct super_block *, unsigned long);
 extern int xiafs_getattr(struct vfsmount *, struct dentry *, struct kstat *);
 
