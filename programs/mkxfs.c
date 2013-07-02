@@ -410,7 +410,9 @@ void do_inode_zones()
   ti.i_gid=getgid();
   ti.i_nlinks=1;
   ti.i_size=bad_zones * ZONE_SIZE;
-  ti.i_mtime=ti.i_atime=ti.i_atime=time(NULL);
+  ti.i_mtime=time(NULL);
+  ti.i_atime=time(NULL);
+  ti.i_atime=time(NULL);
   mk_bad_file(&ti);
 
   if (!(cp=getenv("umark")))
