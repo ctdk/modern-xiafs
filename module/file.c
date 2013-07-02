@@ -16,6 +16,7 @@
  */
 
 #include "xiafs.h"
+#include <linux/pagemap.h>
 
 /*
  * We have mostly NULLs here: the current defaults are OK for
