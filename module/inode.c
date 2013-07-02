@@ -462,7 +462,7 @@ int xiafs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *sta
 	return 0;
 }
 
-static int xiafs_mount(struct file_system_type *fs_type,
+static struct dentry *xiafs_mount(struct file_system_type *fs_type,
 	int flags, const char *dev_name, void *data)
 {
 	return mount_bdev(fs_type, flags, dev_name, data, xiafs_fill_super);
