@@ -42,9 +42,10 @@ Copy the kernel's config file (which should be something like
 also need to get Module.symvers out of /usr/src/linux-headers into the root of
 the kernel source directory.
 
-Once you've done that, run "make oldconfig && make prepare" go get the kernel
-source tree ready for compiling the module. Make sure the kernel source is owned
-by the user you're planning on compiling the module as.
+Once you've done that, run "make oldconfig && make prepare && make 
+modules_prepare" to get the kernel source tree ready for compiling the module. 
+Make sure the kernel source is owned by the user you're planning on compiling 
+the module as.
 
 After all that is done, go into the module subdirectory in this directory. Run:
 
