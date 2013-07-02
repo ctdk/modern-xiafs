@@ -26,8 +26,9 @@
 #include <linux/init.h>
 #include <linux/highuid.h>
 #include <linux/vfs.h>
+#include <linux/writeback.h>
 
-static int xiafs_write_inode(struct inode * inode, int wait);
+static int xiafs_write_inode(struct inode * inode, struct writeback_control *wbc);
 static int xiafs_statfs(struct dentry *dentry, struct kstatfs *buf);
 /* static int xiafs_remount (struct super_block * sb, int * flags, char * data);*/
 
@@ -287,7 +288,7 @@ int __xiafs_write_begin(struct file *file, struct address_space *mapping,
 			loff_t pos, unsigned len, unsigned flags,
 			struct page **pagep, void **fsdata)
 {
-	return block_write_begin(file, mapping, pos, len, flags, pagep, fsdata,
+	return block_write_begin(mapping, pos, len, flags, pagep,
 				xiafs_get_block);
 }
 
@@ -295,8 +296,15 @@ static int xiafs_write_begin(struct file *file, struct address_space *mapping,
 			loff_t pos, unsigned len, unsigned flags,
 			struct page **pagep, void **fsdata)
 {
-	*pagep = NULL;
-	return __xiafs_write_begin(file, mapping, pos, len, flags, pagep, fsdata);
+	/* *pagep = NULL; */
+	int ret;
+	ret = __xiafs_write_begin(file, mapping, pos, len, flags, pagep, fsdata);
+	if (unlikely(ret)){
+		loff_t isize = mapping->host->i_size;
+		if (pos + len > isize)
+			vmtruncate(mapping->host, isize);
+	}
+	return ret;
 }
 
 static sector_t xiafs_bmap(struct address_space *mapping, sector_t block)
@@ -307,7 +315,6 @@ static sector_t xiafs_bmap(struct address_space *mapping, sector_t block)
 static const struct address_space_operations xiafs_aops = {
 	.readpage = xiafs_readpage,
 	.writepage = xiafs_writepage,
-	.sync_page = block_sync_page,
 	.write_begin = xiafs_write_begin,
 	.write_end = generic_write_end,
 	.bmap = xiafs_bmap
@@ -360,7 +367,7 @@ struct inode *xiafs_iget(struct super_block *sb, unsigned long ino)
 	inode->i_mode = raw_inode->i_mode;
 	inode->i_uid = (uid_t)raw_inode->i_uid;
 	inode->i_gid = (gid_t)raw_inode->i_gid;
-	inode->i_nlink = raw_inode->i_nlinks;
+	set_nlink(inode, raw_inode->i_nlinks);
 	inode->i_size = raw_inode->i_size;
 	inode->i_mtime.tv_sec = raw_inode->i_mtime;
 	inode->i_atime.tv_sec = raw_inode->i_atime;
@@ -455,17 +462,16 @@ int xiafs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *sta
 	return 0;
 }
 
-static int xiafs_get_sb(struct file_system_type *fs_type,
-	int flags, const char *dev_name, void *data, struct vfsmount *mnt)
+static int xiafs_mount(struct file_system_type *fs_type,
+	int flags, const char *dev_name, void *data)
 {
-	return get_sb_bdev(fs_type, flags, dev_name, data, xiafs_fill_super,
-			   mnt);
+	return mount_bdev(fs_type, flags, dev_name, data, xiafs_fill_super);
 }
 
 static struct file_system_type xiafs_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "xiafs",
-	.get_sb		= xiafs_get_sb,
+	.mount		= xiafs_mount,
 	.kill_sb	= kill_block_super,
 	.fs_flags	= FS_REQUIRES_DEV,
 };
