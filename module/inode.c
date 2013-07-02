@@ -31,12 +31,17 @@ static int xiafs_write_inode(struct inode * inode, int wait);
 static int xiafs_statfs(struct dentry *dentry, struct kstatfs *buf);
 /* static int xiafs_remount (struct super_block * sb, int * flags, char * data);*/
 
-static void xiafs_delete_inode(struct inode *inode)
+static void xiafs_evict_inode(struct inode *inode)
 {
 	truncate_inode_pages(&inode->i_data, 0);
-	inode->i_size = 0;
-	xiafs_truncate(inode);
-	xiafs_free_inode(inode);
+	if (!inode->i_nlink){
+		inode->i_size = 0;
+		xiafs_truncate(inode);
+	}
+	invalidate_inode_buffers(inode);
+	end_writeback(inode);
+	if (!inode->i_nlink)
+		xiafs_free_inode(inode);
 }
 
 static void xiafs_put_super(struct super_block *sb)
@@ -97,7 +102,7 @@ static const struct super_operations xiafs_sops = {
 	.alloc_inode	= xiafs_alloc_inode,
 	.destroy_inode	= xiafs_destroy_inode,
 	.write_inode	= xiafs_write_inode,
-	.delete_inode	= xiafs_delete_inode,
+	.evict_inode	= xiafs_evict_inode,
 	.put_super	= xiafs_put_super,
 	.statfs		= xiafs_statfs
 };
@@ -420,7 +425,7 @@ static struct buffer_head * xiafs_update_inode(struct inode * inode)
 	return bh;
 }
 
-static int xiafs_write_inode(struct inode *inode, int wait)
+static int xiafs_write_inode(struct inode *inode, struct writeback_control *wbc)
 {
 	int err = 0;
 	struct buffer_head *bh;
@@ -428,7 +433,7 @@ static int xiafs_write_inode(struct inode *inode, int wait)
 	bh = xiafs_update_inode(inode);
 	if (!bh)
 		return -EIO;
-	if (wait && buffer_dirty(bh)) {
+	if (wbc->sync_mode == WB_SYNC_ALL && buffer_dirty(bh)) {
 		sync_dirty_buffer(bh);
 		if (buffer_req(bh) && !buffer_uptodate(bh)) {
 			printk("IO error syncing xiafs inode [%s:%08lx]\n",
