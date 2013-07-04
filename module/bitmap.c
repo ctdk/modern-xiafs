@@ -168,13 +168,13 @@ void xiafs_free_inode(struct inode * inode)
 	ino = inode->i_ino;
 	if (ino < 1 || ino > sbi->s_ninodes) {
 		printk("xiafs_free_inode: inode 0 or nonexistent inode\n");
-		goto out;
+		return;
 	}
 	bit = ino & ((1<<k) - 1);
 	ino >>= k;
 	if (ino >= sbi->s_imap_zones) {
 		printk("xiafs_free_inode: nonexistent imap in superblock\n");
-		goto out;
+		return;
 	}
 
 	xiafs_clear_inode(inode);	/* clear on-disk copy */
