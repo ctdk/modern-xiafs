@@ -284,6 +284,11 @@ static int xiafs_readpage(struct file *file, struct page *page)
 	return block_read_full_page(page,xiafs_get_block);
 }
 
+int xiafs_prepare_chunk(struct page *page, loff_t pos, unsigned len)
+{
+	return __block_write_begin(page, pos, len, xiafs_get_block);
+}
+
 int __xiafs_write_begin(struct file *file, struct address_space *mapping,
 			loff_t pos, unsigned len, unsigned flags,
 			struct page **pagep, void **fsdata)

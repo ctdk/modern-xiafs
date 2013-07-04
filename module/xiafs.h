@@ -184,6 +184,7 @@ extern unsigned long xiafs_count_free_inodes(struct xiafs_sb_info *sbi);
 extern int __xiafs_write_begin(struct file *file, struct address_space *mapping,
 			loff_t pos, unsigned len, unsigned flags,
 			struct page **pagep, void **fsdata);
+extern int xiafs_prepare_chunk(struct page *page, loff_t pos, unsigned len);
 
 extern void xiafs_set_inode(struct inode *, dev_t);
 extern int xiafs_add_link(struct dentry*, struct inode*);

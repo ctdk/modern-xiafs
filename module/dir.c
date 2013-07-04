@@ -302,8 +302,7 @@ int xiafs_add_link(struct dentry *dentry, struct inode *inode)
 
 got_it:
 	pos = page_offset(page) + p - (char *)page_address(page);
-	err = __xiafs_write_begin(NULL, page->mapping, pos, rec_size,
-					AOP_FLAG_UNINTERRUPTIBLE, &page, NULL);
+	err = xiafs_prepare_chunk(page, pos, rec_size);
 	if (err)
 		goto out_unlock;
 	memcpy (namx, name, namelen);
@@ -333,8 +332,7 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct page *page)
 	int err;
 
 	lock_page(page);
-	err = __xiafs_write_begin(NULL, mapping, pos, len,
-					AOP_FLAG_UNINTERRUPTIBLE, &page, NULL);
+	err = xiafs_prepare_chunk(page, pos, len);
 	if (err == 0) {
 		de->d_ino = 0;
 		err = dir_commit_chunk(page, pos, len);
@@ -358,8 +356,7 @@ int xiafs_make_empty(struct inode *inode, struct inode *dir)
 
 	if (!page)
 		return -ENOMEM;
-	err = __xiafs_write_begin(NULL, mapping, 0, zsize,
-					AOP_FLAG_UNINTERRUPTIBLE, &page, NULL);
+	err = xiafs_prepare_chunk(page, 0, zsize);
 	if (err) {
 		unlock_page(page);
 		goto fail;
@@ -450,11 +447,10 @@ void xiafs_set_link(struct xiafs_direct *de, struct page *page,
 
 	lock_page(page);
 
-	err = __xiafs_write_begin(NULL, mapping, pos, _XIAFS_DIR_SIZE,
-					AOP_FLAG_UNINTERRUPTIBLE, &page, NULL);
+	err = xiafs_prepare_chunk(page, pos, de->d_rec_len);
 	if (err == 0) {
 		de->d_ino = inode->i_ino;
-		err = dir_commit_chunk(page, pos, _XIAFS_DIR_SIZE);
+		err = dir_commit_chunk(page, pos, de->d_rec_len);
 	} else {
 		unlock_page(page);
 	}
