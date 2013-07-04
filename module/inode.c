@@ -143,6 +143,7 @@ static int xiafs_fill_super(struct super_block *s, void *data, int silent)
 	}
 	sbi->s_ninodes = ms->s_ninodes;
 	sbi->s_nzones = ms->s_nzones;
+	sbi->s_ndatazones = ms->s_ndatazones;
 	sbi->s_imap_zones = ms->s_imap_zones;
 	sbi->s_zmap_zones = ms->s_zmap_zones;
 	sbi->s_firstdatazone = ms->s_firstdatazone;
@@ -262,7 +263,7 @@ static int xiafs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	u64 id = huge_encode_dev(sb->s_bdev->bd_dev);
 	buf->f_type = sb->s_magic;
 	buf->f_bsize = sb->s_blocksize;
-	buf->f_blocks = (sbi->s_nzones - sbi->s_firstdatazone) << sbi->s_zone_shift;
+	buf->f_blocks = sbi->s_ndatazones;
 	buf->f_bfree = xiafs_count_free_blocks(sbi);
 	buf->f_bavail = buf->f_bfree;
 	buf->f_files = sbi->s_ninodes;
