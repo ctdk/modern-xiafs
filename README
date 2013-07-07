@@ -6,8 +6,9 @@ Kernel module for Xiafs for newish (2.6.32) Linux kernels
 
 A port of the Xiafs filesystem (https://en.wikipedia.org/wiki/Xiafs) from the
 2.1.20 Linux kernel to the 2.6.32 Linux kernel using the Minix fs code in the
-2.6.32 kernel, with plans to get it up to date and working with 3.2+ Linux
-kernels.
+2.6.32 kernel. It is currently known to work with 2.6.32 and 3.2.0 (being,
+respectively, the Debian squeeze and wheezy kernels). There are plans to get it
+working with the very latest kernels and continue tracking those.
 
 -------------------------------------------------------------------------------
 
@@ -47,7 +48,15 @@ modules_prepare" to get the kernel source tree ready for compiling the module.
 Make sure the kernel source is owned by the user you're planning on compiling 
 the module as.
 
-After all that is done, go into the module subdirectory in this directory. Run:
+Along with the master branch, there are git branches for the kernels that this
+module is known to work with (currently linux-2.6.32 and linux-3.2). Just check
+out those branches to get the code for those versions of the kernel. Once the
+xiafs module is working with a particular version of the kernel, the code should
+remain pretty stable except for needed bugfixes that come along. If the kernel
+you're running isn't in one of the branches, try master.
+
+After all that is done, go into the module subdirectory (checking out the
+appropriate version branch if needed) in this directory. Run:
 
 $ make -C /path/to/linux-source-2.6.32 SUBDIRS=$PWD modules
 
@@ -99,11 +108,8 @@ These limits are historical, and not bugs as such.
 BUGS
 ----
 
-* Works and tested with 2.6.32, other 2.6 kernels untested. Known not to work
-  yet with 3.2.0 that shipped with Debian wheezy.
-* Very large (for what xiafs considers very large) filesystems sometimes cause
-  kernel panics when unmounting. This should be fixed, but doesn't seem to be
-  a problem for smaller filesystems.
+* Works and tested with 2.6.32 and 3.2.0, other 2.6 and 3.x kernels untested as
+  of yet.
 * Untested with big-endian architectures.
 
 TODO
