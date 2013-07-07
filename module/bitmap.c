@@ -21,6 +21,8 @@
 /* bitmap.c contains the code that handles the inode and block bitmaps */
 
 #include "xiafs.h"
+#include "bitmap.h"
+#include <linux/fs.h>
 #include <linux/buffer_head.h>
 #include <linux/bitops.h>
 #include <linux/sched.h>
@@ -69,7 +71,7 @@ void xiafs_free_block(struct inode *inode, unsigned long block)
 	}
 	bh = sbi->s_zmap_buf[zone];
 	spin_lock(&bitmap_lock);
-	if (!minix_test_and_clear_bit(bit, bh->b_data))
+	if (!xiafs_test_and_clear_bit(bit, bh->b_data))
 		printk("xiafs_free_block (%s:%lu): bit already cleared\n",
 		       sb->s_id, block);
 	inode->i_blocks -= 2 << XIAFS_ZSHIFT(sbi);
@@ -89,9 +91,9 @@ int xiafs_new_block(struct inode * inode)
 		int j;
 
 		spin_lock(&bitmap_lock);
-		j = minix_find_first_zero_bit(bh->b_data, bits_per_zone);
+		j = xiafs_find_first_zero_bit(bh->b_data, bits_per_zone);
 		if (j < bits_per_zone) {
-			minix_set_bit(j, bh->b_data);
+			xiafs_set_bit(j, bh->b_data);
 			spin_unlock(&bitmap_lock);
 			mark_buffer_dirty(bh);
 			j += i * bits_per_zone + sbi->s_firstdatazone-1;
@@ -166,25 +168,23 @@ void xiafs_free_inode(struct inode * inode)
 	ino = inode->i_ino;
 	if (ino < 1 || ino > sbi->s_ninodes) {
 		printk("xiafs_free_inode: inode 0 or nonexistent inode\n");
-		goto out;
+		return;
 	}
 	bit = ino & ((1<<k) - 1);
 	ino >>= k;
 	if (ino >= sbi->s_imap_zones) {
 		printk("xiafs_free_inode: nonexistent imap in superblock\n");
-		goto out;
+		return;
 	}
 
 	xiafs_clear_inode(inode);	/* clear on-disk copy */
 
 	bh = sbi->s_imap_buf[ino];
 	spin_lock(&bitmap_lock);
-	if (!minix_test_and_clear_bit(bit, bh->b_data))
+	if (!xiafs_test_and_clear_bit(bit, bh->b_data))
 		printk("xiafs_free_inode: bit %lu already cleared\n", bit);
 	spin_unlock(&bitmap_lock);
 	mark_buffer_dirty(bh);
- out:
-	clear_inode(inode);		/* clear in-memory copy */
 }
 
 struct inode * xiafs_new_inode(const struct inode * dir, int * error)
@@ -207,7 +207,7 @@ struct inode * xiafs_new_inode(const struct inode * dir, int * error)
 	spin_lock(&bitmap_lock);
 	for (i = 0; i < sbi->s_imap_zones; i++) {
 		bh = sbi->s_imap_buf[i];
-		j = minix_find_first_zero_bit(bh->b_data, bits_per_zone);
+		j = xiafs_find_first_zero_bit(bh->b_data, bits_per_zone);
 		if (j < bits_per_zone)
 			break;
 	}
@@ -216,7 +216,7 @@ struct inode * xiafs_new_inode(const struct inode * dir, int * error)
 		iput(inode);
 		return NULL;
 	}
-	if (minix_test_and_set_bit(j, bh->b_data)) {	/* shouldn't happen */
+	if (xiafs_test_and_set_bit(j, bh->b_data)) {	/* shouldn't happen */
 		spin_unlock(&bitmap_lock);
 		printk("xiafs_new_inode: bit already set\n");
 		iput(inode);
