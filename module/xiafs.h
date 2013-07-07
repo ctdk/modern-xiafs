@@ -114,8 +114,6 @@ struct xiafs_sb_info {
     u_long   s_max_size;                                /*  32 bytes */
     struct buffer_head ** s_imap_buf; /*  32 bytes */
     struct buffer_head ** s_zmap_buf; /* 128 bytes */
-    int      s_imap_iznr[_XIAFS_IMAP_SLOTS];            /*  32 bytes */
-    int      s_zmap_zznr[_XIAFS_ZMAP_SLOTS];            /* 128 bytes */
     u_char   s_imap_cached;                     /* flag for cached imap */
     u_char   s_zmap_cached;                     /* flag for cached imap */
 };
