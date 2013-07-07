@@ -162,23 +162,25 @@ static int xiafs_fill_super(struct super_block *s, void *data, int silent)
 		goto out_no_map;
 	sbi->s_imap_buf = &map[0];
 	sbi->s_zmap_buf = &map[sbi->s_imap_zones];
+	/*
 	for (i=0; i < sbi->s_imap_zones; i++)
 		sbi->s_imap_iznr[i] = -1;
 	for (i=0; i < sbi->s_zmap_zones; i++)
 		sbi->s_zmap_zznr[i] = -1;
+	*/
 
 	block=1;
 	for (i=0 ; i < sbi->s_imap_zones ; i++) {
 		if (!(sbi->s_imap_buf[i]=sb_bread(s, block)))
 			goto out_no_bitmap;
 		block++;
-		sbi->s_imap_iznr[i]=i;
+	/* 	sbi->s_imap_iznr[i]=i; */
 	}
 	for (i=0 ; i < sbi->s_zmap_zones ; i++) {
 		if (!(sbi->s_zmap_buf[i]=sb_bread(s, block)))
 			goto out_no_bitmap;
 		block++;
-		sbi->s_zmap_zznr[i]=i;
+	/*	sbi->s_zmap_zznr[i]=i; */
 	}
 
 	/* Maybe not needed with xiafs - there's nothing like this in the
