@@ -60,7 +60,6 @@ static int xiafs_setattr(struct dentry *dentry, struct iattr *attr)
 }
 
 const struct inode_operations xiafs_file_inode_operations = {
-	.truncate	= xiafs_truncate,
 	.setattr 	= xiafs_setattr,
 	.getattr	= xiafs_getattr,
 };

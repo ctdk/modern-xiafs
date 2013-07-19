@@ -376,7 +376,7 @@ int xiafs_make_empty(struct inode *inode, struct inode *dir)
 	strcpy(de->d_name, "..");
 	de->d_name_len = 2;
 	de->d_rec_len = zsize - 12;
-	kunmap_atomic(kaddr, KM_USER0);
+	kunmap_atomic(kaddr);
 
 	err = dir_commit_chunk(page, 0, zsize);
 fail:
