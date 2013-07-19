@@ -40,7 +40,7 @@ static void xiafs_evict_inode(struct inode *inode)
 		xiafs_truncate(inode);
 	}
 	invalidate_inode_buffers(inode);
-	end_writeback(inode);
+	clear_inode(inode);
 	if (!inode->i_nlink)
 		xiafs_free_inode(inode);
 }
@@ -137,7 +137,6 @@ static int xiafs_fill_super(struct super_block *s, void *data, int silent)
 	s->s_magic = ms->s_magic;
 	if (s->s_magic != _XIAFS_SUPER_MAGIC) {
 		s->s_dev = 0;
-		unlock_super(s);
 		ret = -EINVAL;
 		goto out_no_fs;
 	}
@@ -191,7 +190,7 @@ static int xiafs_fill_super(struct super_block *s, void *data, int silent)
 	}
 
 	ret = -ENOMEM;
-	s->s_root = d_alloc_root(root_inode);
+	s->s_root = d_make_root(root_inode);
 	if (!s->s_root)
 		goto out_iput;
 
@@ -301,8 +300,10 @@ static int xiafs_write_begin(struct file *file, struct address_space *mapping,
 	ret = __xiafs_write_begin(file, mapping, pos, len, flags, pagep, fsdata);
 	if (unlikely(ret)){
 		loff_t isize = mapping->host->i_size;
-		if (pos + len > isize)
-			vmtruncate(mapping->host, isize);
+		if (pos + len > isize){
+			truncate_pagecache(inode, pos + len, inode->i_size);
+			xiafs_truncate(mapping->host, isize);
+		}
 	}
 	return ret;
 }
