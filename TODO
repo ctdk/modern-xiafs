@@ -1,14 +1,8 @@
-* Update to work with 3.x kernels. While the differences between 2.6.32 (which
-  this module was originally build for) and 3.2.0 (the kernel that shipped with
-  Debian wheezy, and presumably subsequent kernels) aren't nearly as great as
-  between 2.1.21 and 2.6.32, there are some differences that need to be dealt
-  with before this will build against current Linux kernels.
+* Get this module tracking the very bleeding edge of kernel development. It's
+  already at the latest stable (as of this writing) kernel, but is not yet 
+  known to work with the very latest latest kernels.
 
-* It is not certain that this will work with big endian architectures. It 
-  probably should, for completeness, so that needs testing.
-
-* Very large (for what xiafs considers very large) filesystems sometimes cause
-  kernel panics when unmounting. This should be fixed, but doesn't seem to be
-  a problem for smaller filesystems.
+* Get this module building against other distributions' default kernels, like
+  whatever the various versions of Ubuntu ship with.
 
 * Make installation process smoother.
