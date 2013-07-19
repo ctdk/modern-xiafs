@@ -301,7 +301,7 @@ static int xiafs_write_begin(struct file *file, struct address_space *mapping,
 	if (unlikely(ret)){
 		loff_t isize = mapping->host->i_size;
 		if (pos + len > isize){
-			truncate_pagecache(inode, pos + len, isize);
+			truncate_pagecache(mapping->host, pos + len, isize);
 			xiafs_truncate(mapping->host);
 		}
 	}
