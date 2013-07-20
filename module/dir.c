@@ -198,6 +198,7 @@ xiafs_dirent *xiafs_find_entry(struct dentry *dentry, struct page **res_page, st
 
 		kaddr = (char*)page_address(page);
 		limit = kaddr + xiafs_last_byte(dir, n) - 12;
+		de_pre = kaddr;
 		for (p = kaddr; p <= limit; p = xiafs_next_entry(p)) {
 			xiafs_dirent *de = (xiafs_dirent *)p;
 			if (de->d_rec_len == 0){
@@ -210,10 +211,11 @@ xiafs_dirent *xiafs_find_entry(struct dentry *dentry, struct page **res_page, st
 			if (!inumber)
 				continue;
 			reclen = de->d_rec_len;
-			if (namecompare(namelen, _XIAFS_NAME_LEN, name, namx))
-				goto found;
 			if(old_de)
 				*old_de = de_pre;
+			if (namecompare(namelen, _XIAFS_NAME_LEN, name, namx))
+				goto found;
+			de_pre = de;
 		}
 		dir_put_page(page);
 	}
