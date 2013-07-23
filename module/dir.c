@@ -337,29 +337,31 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, str
 	int err;
 
 	lock_page(page);
-	err = xiafs_prepare_chunk(page, pos, len);
-	if (err == 0) {
-		if (de == de_pre){
-			de->d_ino = 0;
-		}
-		else {
-		/* Join the previous entry with this one. */
+	if (de == de_pre){
+		de->d_ino = 0;
+	}
+	else {
+	/* Join the previous entry with this one. */
 		while (de_pre->d_rec_len + (u_char *)de_pre < (u_char *)de){
 			if (de_pre->d_rec_len < 12){
 				printk("XIA-FS: bad directory entry (%s %d)\n", WHERE_ERR);
 				return -1;
-				}
+			}
 			de_pre=(struct xiafs_direct *)(de_pre->d_rec_len + (u_char *)de_pre);
+		}
+		if (de_pre->d_rec_len + (u_char *)de_pre > (u_char *)de){
+			printk("XIA-FS: bad directory entry (%s %d)\n", WHERE_ERR);
+			return -1;
 			}
-			if (de_pre->d_rec_len + (u_char *)de_pre > (u_char *)de){
-				printk("XIA-FS: bad directory entry (%s %d)\n", WHERE_ERR);
-				return -1;
-				}
-			de_pre->d_rec_len += de->d_rec_len;
-			len = de_pre->d_rec_len;
-			pos = page_offset(page) + (char *)de_pre - kaddr;
-			}
-		err = dir_commit_chunk(page, pos, len);
+		de_pre->d_rec_len += de->d_rec_len;
+		len = de_pre->d_rec_len;
+		pos = page_offset(page) + (char *)de_pre - kaddr;
+	}
+
+	err = xiafs_prepare_chunk(page, pos, len);
+
+	if (err == 0) {
+				err = dir_commit_chunk(page, pos, len);
 	} else {
 		unlock_page(page);
 	}
