@@ -338,6 +338,7 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, str
 
 	lock_page(page);
 	if (de == de_pre){
+		printk("XIAFS: We believe de and de_pre are the same\n");
 		de->d_ino = 0;
 	}
 	else {
@@ -347,12 +348,14 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, str
 				printk("XIA-FS: bad directory entry (%s %d)\n", WHERE_ERR);
 				return -1;
 			}
+			printk("XIAFS: Moving de_pre up\n");
 			de_pre=(struct xiafs_direct *)(de_pre->d_rec_len + (u_char *)de_pre);
 		}
 		if (de_pre->d_rec_len + (u_char *)de_pre > (u_char *)de){
 			printk("XIA-FS: bad directory entry (%s %d)\n", WHERE_ERR);
 			return -1;
 			}
+		printk("de_pre->d_rec_len was %d, is now %d\n", de_pre->d_rec_len, de_pre->d_rec_len + de->d_rec_len);
 		de_pre->d_rec_len += de->d_rec_len;
 		len = de_pre->d_rec_len;
 		pos = page_offset(page) + (char *)de_pre - kaddr;
@@ -361,7 +364,7 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, str
 	err = xiafs_prepare_chunk(page, pos, len);
 
 	if (err == 0) {
-				err = dir_commit_chunk(page, pos, len);
+		err = dir_commit_chunk(page, pos, len);
 	} else {
 		unlock_page(page);
 	}
