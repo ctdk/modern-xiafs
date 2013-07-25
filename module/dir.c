@@ -356,6 +356,7 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, str
 			return -1;
 			}
 		printk("de_pre->d_rec_len was %d, is now %d\n", de_pre->d_rec_len, de_pre->d_rec_len + de->d_rec_len);
+		printk("de_pre name: %s de name: %s\n", de_pre->d_name, de->d_name);
 		de_pre->d_rec_len += de->d_rec_len;
 		len = de_pre->d_rec_len;
 		pos = page_offset(page) + (char *)de_pre - kaddr;
