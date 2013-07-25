@@ -68,7 +68,7 @@ static int dir_commit_chunk(struct page *page, loff_t pos, unsigned len)
 	block_write_end(NULL, mapping, pos, len, len, page, NULL);
 
 	if (pos+len > dir->i_size) {
-		i_size_write(dir, dir->i_size + XIAFS_ZSIZE(dir->i_sb));
+		i_size_write(dir, dir->i_size + XIAFS_ZSIZE(xiafs_sb(dir->i_sb)));
 		mark_inode_dirty(dir);
 	}
 	if (IS_DIRSYNC(dir))
