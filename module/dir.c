@@ -359,13 +359,13 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, str
 		printk("de_pre name: %s de name: %s\n", de_pre->d_name, de->d_name);
 		/* d_rec_len can only be XIAFS_ZSIZE at most. Don't join them
 		 * together if they'd go over */
-		if ((de_pre->d_rec_len + de->d_rec_len) <= XIAFS_ZSIZE(xiafs_sb(dir->i_sb))){
+		if ((de_pre->d_rec_len + de->d_rec_len) <= XIAFS_ZSIZE(xiafs_sb(inode->i_sb))){
 			de_pre->d_rec_len += de->d_rec_len;
 			len = de_pre->d_rec_len;
 			pos = page_offset(page) + (char *)de_pre - kaddr;
 		} else {
 			/* If it would go over, just set d_ino to 0 */
-			d->d_ino = 0;
+			de->d_ino = 0;
 		}
 	}
 
