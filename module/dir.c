@@ -363,6 +363,7 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, str
 			de_pre->d_rec_len += de->d_rec_len;
 			len = de_pre->d_rec_len;
 			pos = page_offset(page) + (char *)de_pre - kaddr;
+			printk("XIAFS: kaddr is %p, pos is %u, len is %llu\n");
 		} else {
 			/* If it would go over, just set d_ino to 0 */
 			de->d_ino = 0;
