@@ -166,12 +166,13 @@ static int xiafs_unlink(struct inode * dir, struct dentry *dentry)
 	struct inode * inode = dentry->d_inode;
 	struct page * page;
 	struct xiafs_direct * de;
+	struct xiafs_direct * de_pre;
 
-	de = xiafs_find_entry(dentry, &page);
+	de = xiafs_find_entry(dentry, &page, &de_pre);
 	if (!de)
 		goto end_unlink;
 
-	err = xiafs_delete_entry(de, page);
+	err = xiafs_delete_entry(de, de_pre, page);
 	if (err)
 		goto end_unlink;
 
@@ -205,9 +206,10 @@ static int xiafs_rename(struct inode * old_dir, struct dentry *old_dentry,
 	struct xiafs_direct * dir_de = NULL;
 	struct page * old_page;
 	struct xiafs_direct * old_de;
+	struct xiafs_direct * old_de_pre;
 	int err = -ENOENT;
 
-	old_de = xiafs_find_entry(old_dentry, &old_page);
+	old_de = xiafs_find_entry(old_dentry, &old_page, &old_de_pre);
 	if (!old_de)
 		goto out;
 
@@ -227,7 +229,7 @@ static int xiafs_rename(struct inode * old_dir, struct dentry *old_dentry,
 			goto out_dir;
 
 		err = -ENOENT;
-		new_de = xiafs_find_entry(new_dentry, &new_page);
+		new_de = xiafs_find_entry(new_dentry, &new_page, NULL);
 		if (!new_de)
 			goto out_dir;
 		inode_inc_link_count(old_inode);
@@ -252,7 +254,7 @@ static int xiafs_rename(struct inode * old_dir, struct dentry *old_dentry,
 			inode_inc_link_count(new_dir);
 	}
 
-	xiafs_delete_entry(old_de, old_page);
+	xiafs_delete_entry(old_de, old_de_pre, old_page);
 	inode_dec_link_count(old_inode);
 
 	if (dir_de) {
