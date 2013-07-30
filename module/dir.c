@@ -339,7 +339,6 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, str
 
 	lock_page(page);
 	if (de == de_pre){
-		printk("XIAFS: We believe de and de_pre are the same\n");
 		de->d_ino = 0;
 	}
 	else {
@@ -349,15 +348,12 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, str
 				printk("XIA-FS: bad directory entry (%s %d)\n", WHERE_ERR);
 				return -1;
 			}
-			printk("XIAFS: Moving de_pre up\n");
 			de_pre=(struct xiafs_direct *)(de_pre->d_rec_len + (u_char *)de_pre);
 		}
 		if (de_pre->d_rec_len + (u_char *)de_pre > (u_char *)de){
 			printk("XIA-FS: bad directory entry (%s %d)\n", WHERE_ERR);
 			return -1;
 			}
-		printk("de_pre->d_rec_len was %d, is now %d\n", de_pre->d_rec_len, de_pre->d_rec_len + de->d_rec_len);
-		printk("de_pre name: %s de name: %s\n", de_pre->d_name, de->d_name);
 		/* d_rec_len can only be XIAFS_ZSIZE at most. Don't join them
 		 * together if they'd go over */
 		tmp_pos = page_offset(page) + (char *)de_pre - kaddr;
@@ -365,7 +361,6 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, str
 			de_pre->d_rec_len += de->d_rec_len;
 			len = de_pre->d_rec_len;
 			pos = tmp_pos;
-			printk("XIAFS: kaddr is %p, pos is %llu, len is %u, XIAFS_ZSIZE is %u\n", kaddr, pos, len, XIAFS_ZSIZE(xiafs_sb(inode->i_sb)));
 		} else {
 			/* If it would go over, just set d_ino to 0 */
 			de->d_ino = 0;
