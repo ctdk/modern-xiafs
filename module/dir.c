@@ -173,7 +173,7 @@ static inline int namecompare(int len, int maxlen,
  * itself (as a parameter - res_dir). It does NOT read the inode of the
  * entry - you'll have to do that yourself if you want to.
  */
-xiafs_dirent *xiafs_find_entry(struct dentry *dentry, struct page **res_page)
+xiafs_dirent *xiafs_find_entry(struct dentry *dentry, struct page **res_page, struct xiafs_direct **old_de)
 {
 	const char * name = dentry->d_name.name;
 	int namelen = dentry->d_name.len;
@@ -190,6 +190,7 @@ xiafs_dirent *xiafs_find_entry(struct dentry *dentry, struct page **res_page)
 	for (n = 0; n < npages; n++) {
 		char *kaddr, *limit;
 		unsigned short reclen;
+		xiafs_dirent *de_pre;
 
 		page = dir_get_page(dir, n);
 		if (IS_ERR(page))
@@ -197,6 +198,7 @@ xiafs_dirent *xiafs_find_entry(struct dentry *dentry, struct page **res_page)
 
 		kaddr = (char*)page_address(page);
 		limit = kaddr + xiafs_last_byte(dir, n) - 12;
+		de_pre = (xiafs_dirent *)kaddr;
 		for (p = kaddr; p <= limit; p = xiafs_next_entry(p)) {
 			xiafs_dirent *de = (xiafs_dirent *)p;
 			if (de->d_rec_len == 0){
@@ -209,8 +211,11 @@ xiafs_dirent *xiafs_find_entry(struct dentry *dentry, struct page **res_page)
 			if (!inumber)
 				continue;
 			reclen = de->d_rec_len;
+			if(old_de)
+				*old_de = de_pre;
 			if (namecompare(namelen, _XIAFS_NAME_LEN, name, namx))
 				goto found;
+			de_pre = de;
 		}
 		dir_put_page(page);
 	}
@@ -322,19 +327,49 @@ out_unlock:
 	goto out_put;
 }
 
-int xiafs_delete_entry(struct xiafs_direct *de, struct page *page)
+int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, struct page *page)
 {
 	struct address_space *mapping = page->mapping;
 	struct inode *inode = (struct inode*)mapping->host;
 	char *kaddr = page_address(page);
 	loff_t pos = page_offset(page) + (char*)de - kaddr;
+	loff_t tmp_pos;
 	unsigned len = de->d_rec_len;
 	int err;
 
 	lock_page(page);
-	err = xiafs_prepare_chunk(page, pos, len);
-	if (err == 0) {
+	if (de == de_pre){
 		de->d_ino = 0;
+	}
+	else {
+	/* Join the previous entry with this one. */
+		while (de_pre->d_rec_len + (u_char *)de_pre < (u_char *)de){
+			if (de_pre->d_rec_len < 12){
+				printk("XIA-FS: bad directory entry (%s %d)\n", WHERE_ERR);
+				return -1;
+			}
+			de_pre=(struct xiafs_direct *)(de_pre->d_rec_len + (u_char *)de_pre);
+		}
+		if (de_pre->d_rec_len + (u_char *)de_pre > (u_char *)de){
+			printk("XIA-FS: bad directory entry (%s %d)\n", WHERE_ERR);
+			return -1;
+			}
+		/* d_rec_len can only be XIAFS_ZSIZE at most. Don't join them
+		 * together if they'd go over */
+		tmp_pos = page_offset(page) + (char *)de_pre - kaddr;
+		if (((tmp_pos & (XIAFS_ZSIZE(xiafs_sb(inode->i_sb)) - 1)) + de_pre->d_rec_len + de->d_rec_len) <= XIAFS_ZSIZE(xiafs_sb(inode->i_sb))){
+			de_pre->d_rec_len += de->d_rec_len;
+			len = de_pre->d_rec_len;
+			pos = tmp_pos;
+		} else {
+			/* If it would go over, just set d_ino to 0 */
+			de->d_ino = 0;
+		}
+	}
+
+	err = xiafs_prepare_chunk(page, pos, len);
+
+	if (err == 0) {
 		err = dir_commit_chunk(page, pos, len);
 	} else {
 		unlock_page(page);
@@ -474,7 +509,7 @@ struct xiafs_direct * xiafs_dotdot (struct inode *dir, struct page **p)
 ino_t xiafs_inode_by_name(struct dentry *dentry)
 {
 	struct page *page;
-	struct xiafs_direct *de = xiafs_find_entry(dentry, &page);
+	struct xiafs_direct *de = xiafs_find_entry(dentry, &page, NULL);
 	ino_t res = 0;
 
 	if (de) {
