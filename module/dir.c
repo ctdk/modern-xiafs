@@ -24,14 +24,14 @@
 
 typedef struct xiafs_direct xiafs_dirent;
 
-static int xiafs_readdir(struct file *, void *, filldir_t);
+static int xiafs_readdir(struct file *, struct dir_context *);
 
 #define RNDUP4(x)	((3+(u_long)(x)) & ~3)
 
 const struct file_operations xiafs_dir_operations = {
 	.llseek		= generic_file_llseek,
 	.read		= generic_read_dir,
-	.readdir	= xiafs_readdir,
+	.iterate	= xiafs_readdir,
 	.fsync		= generic_file_fsync,
 };
 
@@ -101,21 +101,24 @@ static inline void *xiafs_next_entry(void *de)
 	return (void*)((char*)de + d->d_rec_len);
 }
 
-static int xiafs_readdir(struct file * filp, void * dirent, filldir_t filldir)
+static int xiafs_readdir(struct file * file, struct dir_context *ctx)
 {
-	unsigned long pos = filp->f_pos;
-	struct inode *inode = filp->f_path.dentry->d_inode;
-	unsigned offset = pos & ~PAGE_CACHE_MASK;
-	unsigned long n = pos >> PAGE_CACHE_SHIFT;
+	unsigned long pos = ctx->pos;
+	struct inode *inode = file_inode(file);
 	unsigned long npages = dir_pages(inode);
 	unsigned chunk_size = _XIAFS_DIR_SIZE; /* 1st entry is always 12, it seems. */
 	char *name;
 	unsigned char namelen;
 	__u32 inumber;
+	unsigned offset;
+	unsigned long n;
 
-	pos = (pos + chunk_size-1) & ~(chunk_size-1);
+	ctx->pos = pos = ALIGN(pos, chunk_size); /* (pos + chunk_size-1) & ~(chunk_size-1); */
 	if (pos >= inode->i_size)
-		goto done;
+		return 0;
+
+	offset = pos & ~PAGE_CACHE_MASK;
+	n = pos >> PAGE_CACHE_SHIFT;
 
 	for ( ; n < npages; n++, offset = 0) {
 		char *p, *kaddr, *limit;
@@ -137,23 +140,21 @@ static int xiafs_readdir(struct file * filp, void * dirent, filldir_t filldir)
 			inumber = de->d_ino;
 			namelen = de->d_name_len;
 			if (inumber) {
-				int over;
-
-				offset = p - kaddr;
-				over = filldir(dirent, name, namelen,
-					(n << PAGE_CACHE_SHIFT) | offset,
-					inumber, DT_UNKNOWN);
-				if (over) {
+				if (!dir_emit(ctx, name, namelen, inumber, DT_UNKNOWN)){
 					dir_put_page(page);
-					goto done;
+					return 0;
 				}
 			}
+			/* Minix has here:
+			 * ctx->pos += chunk_size;
+			 * xiafs has variable length directories, though, so we
+			 * want to increase the position by the length of the
+			 * directory entry rather than a fixed chunk size. */
+			ctx->pos += de->d_rec_len;
 		}
 		dir_put_page(page);
 	}
 
-done:
-	filp->f_pos = (n << PAGE_CACHE_SHIFT) | offset;
 	return 0;
 }
 
