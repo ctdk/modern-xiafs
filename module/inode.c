@@ -397,7 +397,7 @@ struct inode *xiafs_iget(struct super_block *sb, unsigned long ino)
 }
 
 /*
- * The xiafs V2 function to synchronize an inode.
+ * The xiafs function to synchronize an inode.
  */
 static struct buffer_head * xiafs_update_inode(struct inode * inode)
 {
