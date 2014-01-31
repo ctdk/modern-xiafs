@@ -341,8 +341,7 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, str
 	lock_page(page);
 	if (de == de_pre){
 		de->d_ino = 0;
-	}
-	else {
+	} else {
 	/* Join the previous entry with this one. */
 		while (de_pre->d_rec_len + (u_char *)de_pre < (u_char *)de){
 			if (de_pre->d_rec_len < 12){

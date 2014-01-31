@@ -112,7 +112,7 @@ static int xiafs_fill_super(struct super_block *s, void *data, int silent)
 {
 	struct buffer_head *bh;
 	struct buffer_head **map;
-	struct xiafs_super_block *ms;
+	struct xiafs_super_block *xs;
 	unsigned long i, block;
 	struct inode *root_inode;
 	struct xiafs_sb_info *sbi;
@@ -133,21 +133,21 @@ static int xiafs_fill_super(struct super_block *s, void *data, int silent)
 	if (!(bh = sb_bread(s, 0)))
 		goto out_bad_sb;
 
-	ms = (struct xiafs_super_block *) bh->b_data;
-	s->s_magic = ms->s_magic;
+	xs = (struct xiafs_super_block *) bh->b_data;
+	s->s_magic = xs->s_magic;
 	if (s->s_magic != _XIAFS_SUPER_MAGIC) {
 		s->s_dev = 0;
 		ret = -EINVAL;
 		goto out_no_fs;
 	}
-	sbi->s_ninodes = ms->s_ninodes;
-	sbi->s_nzones = ms->s_nzones;
-	sbi->s_ndatazones = ms->s_ndatazones;
-	sbi->s_imap_zones = ms->s_imap_zones;
-	sbi->s_zmap_zones = ms->s_zmap_zones;
-	sbi->s_firstdatazone = ms->s_firstdatazone;
-	sbi->s_zone_shift = ms->s_zone_shift;
-	sbi->s_max_size = ms->s_max_size;
+	sbi->s_ninodes = xs->s_ninodes;
+	sbi->s_nzones = xs->s_nzones;
+	sbi->s_ndatazones = xs->s_ndatazones;
+	sbi->s_imap_zones = xs->s_imap_zones;
+	sbi->s_zmap_zones = xs->s_zmap_zones;
+	sbi->s_firstdatazone = xs->s_firstdatazone;
+	sbi->s_zone_shift = xs->s_zone_shift;
+	sbi->s_max_size = xs->s_max_size;
 
 
 	/*
@@ -173,12 +173,6 @@ static int xiafs_fill_super(struct super_block *s, void *data, int silent)
 			goto out_no_bitmap;
 		block++;
 	}
-
-	/* Maybe not needed with xiafs - there's nothing like this in the
-	 * original xiafs code, but there is in both the current and old minix
-	 * code. */
-	/* minix_set_bit(0,sbi->s_imap_buf[0]->b_data);
-	minix_set_bit(0,sbi->s_zmap_buf[0]->b_data); */
 
 	/* set up enough so that it can read an inode */
 	s->s_op = &xiafs_sops;
@@ -283,21 +277,15 @@ int xiafs_prepare_chunk(struct page *page, loff_t pos, unsigned len)
 	return __block_write_begin(page, pos, len, xiafs_get_block);
 }
 
-int __xiafs_write_begin(struct file *file, struct address_space *mapping,
-			loff_t pos, unsigned len, unsigned flags,
-			struct page **pagep, void **fsdata)
-{
-	return block_write_begin(mapping, pos, len, flags, pagep,
-				xiafs_get_block);
-}
-
 static int xiafs_write_begin(struct file *file, struct address_space *mapping,
 			loff_t pos, unsigned len, unsigned flags,
 			struct page **pagep, void **fsdata)
 {
 	/* *pagep = NULL; */
 	int ret;
-	ret = __xiafs_write_begin(file, mapping, pos, len, flags, pagep, fsdata);
+	ret = block_write_begin(mapping, pos, len, flags, pagep, 
+				xiafs_get_block);
+
 	if (unlikely(ret)){
 		loff_t isize = mapping->host->i_size;
 		if (pos + len > isize){
@@ -376,7 +364,6 @@ struct inode *xiafs_iget(struct super_block *sb, unsigned long ino)
 	inode->i_mtime.tv_nsec = 0;
 	inode->i_atime.tv_nsec = 0;
 	inode->i_ctime.tv_nsec = 0;
-	inode->i_blocks = 0;
 	if (S_ISCHR(inode->i_mode) || S_ISBLK(inode->i_mode)) {
 		inode->i_blocks=0;
 		inode->i_rdev = old_decode_dev(raw_inode->i_zone[0]);
@@ -387,7 +374,7 @@ struct inode *xiafs_iget(struct super_block *sb, unsigned long ino)
 		 * way it works with minix and ext2. Hopefully it will simplify
 		 * using the block allocation code lifted from the minix code.
 		 */
-		for (zone = 0; zone < 10; zone++)
+		for (zone = 0; zone < _XIAFS_NUM_BLOCK_POINTERS; zone++)
 		    	xiafs_inode->i_zone[zone] = raw_inode->i_zone[zone] & 0xffffff;
 	}
 	xiafs_set_inode(inode, old_decode_dev(raw_inode->i_zone[0]));
@@ -426,7 +413,7 @@ static struct buffer_head * xiafs_update_inode(struct inode * inode)
 		 * way it works with minix and ext2. Hopefully it will simplify
 		 * using the block allocation code lifted from the minix code.
 		 */
-		for (i = 0; i < 10; i++)
+		for (i = 0; i < _XIAFS_NUM_BLOCK_POINTERS; i++)
 			raw_inode->i_zone[i] = (raw_inode->i_zone[i] & 0xff000000) | (xiafs_inode->i_zone[i] & 0xffffff);
 	}
 	mark_buffer_dirty(bh);

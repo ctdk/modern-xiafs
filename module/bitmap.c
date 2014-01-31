@@ -31,7 +31,7 @@ static const int nibblemap[] = { 0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4 };
 
 static DEFINE_SPINLOCK(bitmap_lock);
 
-static unsigned long count_free(struct buffer_head *map[], unsigned numblocks, __u32 numbits)
+static unsigned long count_used(struct buffer_head *map[], unsigned numblocks, __u32 numbits)
 {
 	unsigned long i, j, sum = 0;
 	struct buffer_head *bh;
@@ -109,7 +109,7 @@ int xiafs_new_block(struct inode * inode)
 
 unsigned long xiafs_count_free_blocks(struct xiafs_sb_info *sbi)
 {
-	return ((sbi->s_zmap_zones << XIAFS_BITS_PER_Z_BITS(sbi)) - count_free(sbi->s_zmap_buf, sbi->s_zmap_zones,
+	return ((sbi->s_zmap_zones << XIAFS_BITS_PER_Z_BITS(sbi)) - count_used(sbi->s_zmap_buf, sbi->s_zmap_zones,
 		sbi->s_nzones - sbi->s_firstdatazone + 1));
 }
 
@@ -244,5 +244,5 @@ struct inode * xiafs_new_inode(const struct inode * dir, int * error)
 
 unsigned long xiafs_count_free_inodes(struct xiafs_sb_info *sbi)
 {
-	return (sbi->s_imap_zones << XIAFS_BITS_PER_Z_BITS(sbi)) - count_free(sbi->s_imap_buf, sbi->s_imap_zones, sbi->s_ninodes + 1);
+	return (sbi->s_imap_zones << XIAFS_BITS_PER_Z_BITS(sbi)) - count_used(sbi->s_imap_buf, sbi->s_imap_zones, sbi->s_ninodes + 1);
 }

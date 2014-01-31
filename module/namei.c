@@ -241,7 +241,7 @@ static int xiafs_rename(struct inode * old_dir, struct dentry *old_dentry,
 	} else {
 		if (dir_de) {
 			err = -EMLINK;
-			if (new_dir->i_nlink >= 64000)
+			if (new_dir->i_nlink >= _XIAFS_MAX_LINK)
 				goto out_dir;
 		}
 		inode_inc_link_count(old_inode);

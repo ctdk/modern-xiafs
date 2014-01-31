@@ -28,6 +28,7 @@
 #define _XIAFS_MAX_LINK 64000
 /* I think this is the equivalent of s_dirsize in the minix stuff */
 #define _XIAFS_DIR_SIZE 12
+#define _XIAFS_NUM_BLOCK_POINTERS 10
 
 #define _XIAFS_NAME_LEN 248
 
@@ -42,7 +43,7 @@ struct xiafs_inode {		/* 64 bytes */
     __u32   i_ctime;
     __u32   i_atime;
     __u32   i_mtime;
-    __u32  i_zone[10];
+    __u32  i_zone[_XIAFS_NUM_BLOCK_POINTERS];
 };
 
 /*
@@ -86,7 +87,7 @@ struct xiafs_direct {
  */
 
 struct xiafs_inode_info {               /* for data zone pointers */
-    __u32  i_zone[10];
+    __u32  i_zone[_XIAFS_NUM_BLOCK_POINTERS];
     struct inode vfs_inode;
 };
 
@@ -179,9 +180,6 @@ static inline void print_mem(void const *vp, size_t n){
 extern struct inode * xiafs_new_inode(const struct inode * dir, int * error);
 extern void xiafs_free_inode(struct inode * inode);
 extern unsigned long xiafs_count_free_inodes(struct xiafs_sb_info *sbi);
-extern int __xiafs_write_begin(struct file *file, struct address_space *mapping,
-			loff_t pos, unsigned len, unsigned flags,
-			struct page **pagep, void **fsdata);
 extern int xiafs_prepare_chunk(struct page *page, loff_t pos, unsigned len);
 
 extern void xiafs_set_inode(struct inode *, dev_t);
