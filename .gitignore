@@ -18,3 +18,4 @@
 .*.sw?
 .*.o.d
 .*.cmd
+.DS_Store
