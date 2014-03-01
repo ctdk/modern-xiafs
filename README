@@ -1,7 +1,7 @@
 -------------------------------------------------------------------------------
 
-Kernel module for Xiafs for newish (2.6.32, 3.2.0, 3.10.1, 3.11.1, 3.12.1) Linux
-kernels
+Kernel module for Xiafs for newish (2.6.32, 3.2.0, 3.10.1, 3.11.1, 3.12.1,
+3.13.5) Linux kernels
 
 -------------------------------------------------------------------------------
 
@@ -11,9 +11,9 @@ A port of the Xiafs filesystem (https://en.wikipedia.org/wiki/Xiafs) from the
 and 3.12.1 (being, respectively, the Debian squeeze and wheezy kernels and the 
 three latest stable kernel this module has been tested with, as of this 
 writing). Lately this module is being tested against the major new stable kernel
-versions (so far 3.10, 3.11, & 3.12) some time after their release, but it is 
-not being tested against every point release (so far, 3.10.1, 3.11.1, and 3.12.1
-have been tested, but not against 3.10.2, .3, etc.).
+versions (so far 3.10 - 3.13) some time after their release, but it is 
+not being tested against every point release (so far, 3.10.1, 3.11.1, 3.12.1,
+and 3.13.5 have been tested, but not against 3.10.2, .3, etc.).
 
 -------------------------------------------------------------------------------
 
@@ -57,11 +57,12 @@ the module as.
 
 Along with the master branch, there are git branches for the kernels that this
 module is known to work with (currently linux-2.6.32, linux-3.2, linux-3.10.1, 
-linux-3.11.1, and linux-3.12.1). Just check out those branches to get the code 
-for those versions of the kernel. Once the xiafs module is working with a 
-particular version of the kernel, the code should remain pretty stable except 
-for needed bugfixes that come along.  If the kernel you're running isn't in one
-of the branches, try master, or the branch closest to your current kernel.  
+linux-3.11.1, linux-3.12.1, and linux-3.13.5). Just check out those branches 
+to get the code for those versions of the kernel. Once the xiafs module is 
+working with a particular version of the kernel, the code should remain pretty 
+stable except for needed bugfixes that come along.  If the kernel you're running
+isn't in one of the branches, try master, or the branch closest to your current 
+kernel.  
 
 After all that is done, go into the module subdirectory (checking out the
 appropriate version branch if needed) in this directory. Run:
@@ -116,8 +117,8 @@ These limits are historical, and not bugs as such.
 BUGS
 ----
 
-* Works and tested with 2.6.32, 3.2.0, 3.10.1, 3.11.1 and 3.12.1, other 2.6 and 
-  3.x kernels untested as of yet.
+* Works and tested with 2.6.32, 3.2.0, 3.10.1, 3.11.1, 3.12.1, and 3.13.5, other
+  2.6 and 3.x kernels untested as of yet.
 * Has been tested with big-endian architectures (s390x, specifically) only with 
   the linux-3.2 version. You can compile and load the module, and create and 
   mount filesystems with the filesystem tools, but at this time you cannot mount
