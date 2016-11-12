@@ -311,8 +311,7 @@ static const struct address_space_operations xiafs_aops = {
 
 static const struct inode_operations xiafs_symlink_inode_operations = {
 	.readlink	= generic_readlink,
-	.follow_link	= page_follow_link_light,
-	.put_link	= page_put_link,
+	.get_link	= page_get_link,
 	.getattr	= xiafs_getattr,
 };
 
