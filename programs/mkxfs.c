@@ -400,8 +400,7 @@ void mk_bad_file(struct xiafs_inode *inode_pt)
  */
 void do_inode_zones()
 {
-  int i;
-  char *cp;
+  int i, cp;
   struct xiafs_inode ti, *ip;
 
   memset(&ti, 0, sizeof(struct xiafs_inode));
@@ -413,10 +412,10 @@ void do_inode_zones()
   ti.i_mtime=ti.i_atime=ti.i_atime=time(NULL);
   mk_bad_file(&ti);
 
-  if (!(cp=getenv("umark")))
+  if (!(cp=umask(0)))
     i=0777;
   else
-    i= (~atoi(cp)) & 0777;
+    i= ~cp & 0777;
   memset(zone_buf, 0, ZONE_SIZE);
   ip=(struct xiafs_inode *)zone_buf;
   ip->i_mode=S_IFDIR | i;
