@@ -327,6 +327,7 @@ void xiafs_set_inode(struct inode *inode, dev_t rdev)
 		inode->i_mapping->a_ops = &xiafs_aops;
 	} else if (S_ISLNK(inode->i_mode)) {
 		inode->i_op = &xiafs_symlink_inode_operations;
+		inode_nohighmem(inode);
 		inode->i_mapping->a_ops = &xiafs_aops;
 	} else
 		init_special_inode(inode, inode->i_mode, rdev);
