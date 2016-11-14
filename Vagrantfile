@@ -12,8 +12,11 @@ Vagrant.configure(2) do |config|
 
   # Every Vagrant development environment requires a box. You can search for
   # boxes at https://atlas.hashicorp.com/search.
-  config.vm.box = "chef/debian-7.8"
+  #config.vm.box = "chef/debian-7.8"
   #config.vm.box = "chef/ubuntu-14.04"
+  config.vm.box = "debian/jessie64"
+
+  config.vm.synced_folder '.', '/vagrant', :disabled => true
 
   # Disable automatic box update checking. If you disable this, then
   # boxes will only be checked for updates when the user runs
@@ -49,10 +52,12 @@ Vagrant.configure(2) do |config|
   config.vm.provider "virtualbox" do |vb|
     # Customize the amount of memory on the VM:
     vb.memory = "1024"
-    #vb.customize ['createhd', '--filename', file_to_disk, '--size', 4 * 1024]
-    #vb.customize ['createhd', '--filename', kern_disk, '--size', 30 * 1024]
-    #vb.customize ['storageattach', :id, '--storagectl', 'IDE Controller', '--port', 1, '--device', 0, '--type', 'hdd', '--medium', file_to_disk]
-    #vb.customize ['storageattach', :id, '--storagectl', 'IDE Controller', '--port', 1, '--device', 1, '--type', 'hdd', '--medium', kern_disk]
+    if !File.exist?(file_to_disk)
+      vb.customize ['createhd', '--filename', file_to_disk, '--size', 4 * 1024]
+      vb.customize ['createhd', '--filename', kern_disk, '--size', 30 * 1024]
+      vb.customize ['storageattach', :id, '--storagectl', 'SATA Controller', '--port', 1, '--type', 'hdd', '--medium', file_to_disk]
+      vb.customize ['storageattach', :id, '--storagectl', 'SATA Controller', '--port', 2, '--type', 'hdd', '--medium', kern_disk]
+    end
   end
   #
   # View the documentation for the provider you are using for more
@@ -69,7 +74,7 @@ Vagrant.configure(2) do |config|
   # Puppet, Chef, Ansible, Salt, and Docker are also available. Please see the
   # documentation for more information about their specific syntax and use.
   config.vm.provision "shell", inline: <<-SHELL
-    #sudo apt-get update
-    #sudo apt-get install 
+    sudo apt-get update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install git fakeroot kernel-package linux-headers-3.16 hexedit -y
   SHELL
 end
