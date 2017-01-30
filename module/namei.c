@@ -198,7 +198,8 @@ static int xiafs_rmdir(struct inode * dir, struct dentry *dentry)
 }
 
 static int xiafs_rename(struct inode * old_dir, struct dentry *old_dentry,
-			   struct inode * new_dir, struct dentry *new_dentry)
+			   struct inode * new_dir, struct dentry *new_dentry,
+			   unsigned int flags)
 {
 	struct inode * old_inode = old_dentry->d_inode;
 	struct inode * new_inode = new_dentry->d_inode;
