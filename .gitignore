@@ -35,3 +35,6 @@ xiafs.mod.c
 mkxfs
 xfsck
 
+# patch mishaps
+*.rej
+*.orig
