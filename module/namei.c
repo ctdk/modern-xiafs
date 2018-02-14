@@ -84,7 +84,6 @@ static int xiafs_symlink(struct inode * dir, struct dentry *dentry,
 	if (i > dir->i_sb->s_blocksize)
 		goto out;
 
-	inode = xiafs_new_inode(dir, S_IFLNK | 0777, &err);
 	if (!inode)
 		goto out;
 
