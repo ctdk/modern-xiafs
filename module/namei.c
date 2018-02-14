@@ -57,7 +57,7 @@ static int xiafs_mknod(struct inode * dir, struct dentry *dentry, umode_t mode, 
 	if (!old_valid_dev(rdev))
 		return -EINVAL;
 
-	inode = xiafs_new_inode(dir, &error);
+	inode = xiafs_new_inode(dir, mode, &error);
 
 	if (inode) {
 		inode->i_mode = mode;
@@ -84,7 +84,7 @@ static int xiafs_symlink(struct inode * dir, struct dentry *dentry,
 	if (i > dir->i_sb->s_blocksize)
 		goto out;
 
-	inode = xiafs_new_inode(dir, &err);
+	inode = xiafs_new_inode(dir, S_IFLNK | 0777, &err);
 	if (!inode)
 		goto out;
 

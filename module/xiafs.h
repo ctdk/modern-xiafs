@@ -177,7 +177,7 @@ static inline void print_mem(void const *vp, size_t n){
 
 #ifdef __KERNEL__
 
-extern struct inode * xiafs_new_inode(const struct inode * dir, int * error);
+extern struct inode * xiafs_new_inode(const struct inode * dir, umode_t mode, int * error);
 extern void xiafs_free_inode(struct inode * inode);
 extern unsigned long xiafs_count_free_inodes(struct xiafs_sb_info *sbi);
 extern int xiafs_prepare_chunk(struct page *page, loff_t pos, unsigned len);
@@ -194,7 +194,7 @@ extern int xiafs_empty_dir(struct inode*);
 
 extern void xiafs_truncate(struct inode *);
 extern struct inode * xiafs_iget(struct super_block *, unsigned long);
-extern int xiafs_getattr(struct vfsmount *, struct dentry *, struct kstat *);
+extern int xiafs_getattr(const struct path *path, struct kstat *stat, u32 request_mask, unsigned int flags);
 
 extern const struct inode_operations xiafs_file_inode_operations;
 extern const struct inode_operations xiafs_dir_inode_operations;
