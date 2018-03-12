@@ -57,7 +57,7 @@ static int xiafs_mknod(struct inode * dir, struct dentry *dentry, umode_t mode, 
 	if (!old_valid_dev(rdev))
 		return -EINVAL;
 
-	inode = xiafs_new_inode(dir, &error);
+	inode = xiafs_new_inode(dir, mode, &error);
 
 	if (inode) {
 		inode->i_mode = mode;
@@ -80,15 +80,16 @@ static int xiafs_symlink(struct inode * dir, struct dentry *dentry,
 	int err = -ENAMETOOLONG;
 	int i = strlen(symname)+1;
 	struct inode * inode;
+	umode_t mode;
 
 	if (i > dir->i_sb->s_blocksize)
 		goto out;
 
-	inode = xiafs_new_inode(dir, &err);
+	mode = S_IFLNK | 0777;
+	inode = xiafs_new_inode(dir, mode, &err);
 	if (!inode)
 		goto out;
 
-	inode->i_mode = S_IFLNK | 0777;
 	xiafs_set_inode(inode, 0);
 	err = page_symlink(inode, symname, i);
 	if (err)
@@ -128,7 +129,7 @@ static int xiafs_mkdir(struct inode * dir, struct dentry *dentry, umode_t mode)
 
 	inode_inc_link_count(dir);
 
-	inode = xiafs_new_inode(dir, &err);
+	inode = xiafs_new_inode(dir, mode, &err);
 	if (!inode)
 		goto out_dir;
 

@@ -439,11 +439,11 @@ static int xiafs_write_inode(struct inode *inode, struct writeback_control *wbc)
 	return err;
 }
 
-int xiafs_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat)
+int xiafs_getattr(const struct path *path, struct kstat *stat, u32 request_mask, unsigned int flags)
 {
-	struct inode *dir = dentry->d_parent->d_inode;
-	struct super_block *sb = dir->i_sb;
-	generic_fillattr(dentry->d_inode, stat);
+	struct super_block *sb = path->dentry->d_sb;
+	struct inode *inode = d_inode(path->dentry);
+	generic_fillattr(inode, stat);
 	stat->blocks = (sb->s_blocksize / 512) * xiafs_blocks(stat->size, sb);
 	stat->blksize = sb->s_blocksize;
 	return 0;

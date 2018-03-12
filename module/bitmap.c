@@ -187,7 +187,7 @@ void xiafs_free_inode(struct inode * inode)
 	mark_buffer_dirty(bh);
 }
 
-struct inode * xiafs_new_inode(const struct inode * dir, int * error)
+struct inode * xiafs_new_inode(const struct inode * dir, umode_t mode, int * error)
 {
 	struct super_block *sb = dir->i_sb;
 	struct xiafs_sb_info *sbi = xiafs_sb(sb);
@@ -229,8 +229,7 @@ struct inode * xiafs_new_inode(const struct inode * dir, int * error)
 		iput(inode);
 		return NULL;
 	}
-	inode->i_uid = current_fsuid();
-	inode->i_gid = (dir->i_mode & S_ISGID) ? dir->i_gid : current_fsgid();
+	inode_init_owner(inode, dir, mode);
 	inode->i_ino = j;
 	inode->i_mtime = inode->i_atime = inode->i_ctime = CURRENT_TIME_SEC;
 	inode->i_blocks = 0;
