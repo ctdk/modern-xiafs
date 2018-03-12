@@ -113,7 +113,7 @@ static int xiafs_link(struct dentry * old_dentry, struct inode * dir,
 	if (inode->i_nlink >= _XIAFS_MAX_LINK)
 		return -EMLINK;
 
-	inode->i_ctime = CURRENT_TIME_SEC;
+	inode->i_ctime = current_time(inode);
 	inode_inc_link_count(inode);
 	atomic_inc(&inode->i_count);
 	return add_nondir(dentry, inode);
@@ -236,7 +236,7 @@ static int xiafs_rename(struct inode * old_dir, struct dentry *old_dentry,
 			goto out_dir;
 		inode_inc_link_count(old_inode);
 		xiafs_set_link(new_de, new_page, old_inode);
-		new_inode->i_ctime = CURRENT_TIME_SEC;
+		new_inode->i_ctime = current_time(new_inode);
 		if (dir_de)
 			drop_nlink(new_inode);
 		inode_dec_link_count(new_inode);

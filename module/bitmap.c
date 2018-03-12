@@ -231,7 +231,7 @@ struct inode * xiafs_new_inode(const struct inode * dir, umode_t mode, int * err
 	}
 	inode_init_owner(inode, dir, mode);
 	inode->i_ino = j;
-	inode->i_mtime = inode->i_atime = inode->i_ctime = CURRENT_TIME_SEC;
+	inode->i_mtime = inode->i_atime = inode->i_ctime = current_time(inode);
 	inode->i_blocks = 0;
 	memset(&xiafs_i(inode)->i_zone, 0, sizeof(xiafs_i(inode)->i_zone));
 	insert_inode_hash(inode);
