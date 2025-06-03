@@ -14,7 +14,7 @@ Vagrant.configure(2) do |config|
   # boxes at https://atlas.hashicorp.com/search.
   config.vm.box = "debian/bookworm64"
 
-  config.vm.synced_folder '.', '/vagrant', :disabled => true
+  config.vm.synced_folder '.', '/vagrant', :disabled => false
 
   # Disable automatic box update checking. If you disable this, then
   # boxes will only be checked for updates when the user runs
@@ -40,6 +40,7 @@ Vagrant.configure(2) do |config|
   # the path on the guest to mount the folder. And the optional third
   # argument is a set of non-required options.
   # config.vm.synced_folder "../data", "/vagrant_data"
+  config.vm.synced_folder "../linux", "/kernel-src/linux"
 
   # Provider-specific configuration so you can fine-tune various
   # backing providers for Vagrant. These expose provider-specific options.
@@ -49,7 +50,7 @@ Vagrant.configure(2) do |config|
   kern_disk = "./tmp/kern-src-disk.vdi"
   config.vm.provider "virtualbox" do |vb|
     # Customize the amount of memory on the VM:
-    vb.memory = "1024"
+    vb.memory = "2048"
     if !File.exist?(file_to_disk)
       vb.customize ['createhd', '--filename', file_to_disk, '--size', 4 * 1024]
       vb.customize ['createhd', '--filename', kern_disk, '--size', 30 * 1024]
@@ -73,6 +74,6 @@ Vagrant.configure(2) do |config|
   # documentation for more information about their specific syntax and use.
   config.vm.provision "shell", inline: <<-SHELL
     sudo apt-get update
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install git fakeroot kernel-package linux-headers-amd64 hexedit -y
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install git fakeroot linux-headers-amd64 hexedit linux-source debhelper-compat libdw-dev -y
   SHELL
 end
