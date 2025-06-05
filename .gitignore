@@ -30,6 +30,7 @@ modules.order
 Module.symvers
 xiafs.ko
 xiafs.mod.c
+xiafs.mod
 
 # built utilities
 mkxfs
