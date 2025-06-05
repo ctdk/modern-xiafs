@@ -5,7 +5,7 @@ Kernel module for Xiafs for newish (2.6.32, 3.2.0, 3.10+) Linux kernels.
 
 -------------------------------------------------------------------------------
 
-A port of the [Xiafs filesystem](https://en.wikipedia.org/wiki/Xiafs) from the 2.1.20 Linux kernel to the 2.6.32 Linux kernel using the Minix fs code in the 2.6.32 kernel. It is currently known to work with 2.6.32, 3.2.0, 3.10-3.19, and 4.x kernels. Lately this module is being tested against the major new stable kernel versions some time after their release, but it is not being tested against every minor point release.
+A port of the [Xiafs filesystem](https://en.wikipedia.org/wiki/Xiafs) from the 2.1.20 Linux kernel to the 2.6.32 Linux kernel using the Minix fs code in the 2.6.32 kernel. It is currently known to work with 2.6.32, 3.2.0, 3.10-3.19, and 4.x kernels, with work on the 6.x kernels ongoing. Lately this module is being tested against the major new stable kernel versions some time after their release, but it is not being tested against every minor point release.
 
 -------------------------------------------------------------------------------
 
@@ -13,7 +13,7 @@ A port of the [Xiafs filesystem](https://en.wikipedia.org/wiki/Xiafs) from the 2
 
 -------------------------------------------------------------------------------
 
-Xiafs is an ancient Linux filesystem that was an early competitor to ext2, but for various reasons, like its lack of extensibility, it fell from general use and was eventually removed from the kernel in version 2.1.21. As an intellectual exercise to learn more about how filesystems work, I decided to port xiafs from the last kernel it was still in to work with the kernel that shipped with Debian squeeze (2.6.32). Later, I also got it working with 3.2.0, 3.10.1, and at least one minor point release of each subsequent 3.x and 4.x series kernels.
+Xiafs is an ancient Linux filesystem that was an early competitor to ext2, but for various reasons, like its lack of extensibility, it fell from general use and was eventually removed from the kernel in version 2.1.21. As an intellectual exercise to learn more about how filesystems work, I decided to port xiafs from the last kernel it was still in to work with the kernel that shipped with Debian squeeze (2.6.32). Later, I also got it working with 3.2.0, 3.10.1, and at least one minor point release of each subsequent 3.x and 4.x series kernels. After setting this aside for a while after COVID-19 struck, I've picked it up again and have been working on getting it working with the 6.x kernel series.
 
 KERNELS
 -------
@@ -48,6 +48,7 @@ against:
 4.16.16
 4.17.18
 4.18.5
+6.1.140-debian
 ```
 
 As noted below, some versions of the module are have been built and tested against other versions of the kernel. The module may work with other kernels, but that is uncertain.
@@ -63,7 +64,7 @@ Then you'll need to prepare the kernel source tree for compiling the module.  Co
 
 Once you've done that, run `make oldconfig && make prepare && make modules_prepare` to get the kernel source tree ready for compiling the module. If your distribution has another recommended way to build the kernel package, like `make deb-pkg`, follow those steps. Make sure the kernel source is owned by the user you're planning on compiling the module as.
 
-Along with the master branch, there are git branches for the kernels that this module is known to work with (currently linux-2.6.32, linux-3.2, linux-3.10.1, linux-3.11.1, linux-3.12.1, linux-3.13.5, linux-3.14.2, linux-3.15.3, linux-3.16.4 (which covers 3.17.0, 3.18.11, 3.19.3 and 4.0.9 as well), linux-4.1.3, linux-4.4.0, linux-4.7.10 (which covers 4.8.7), linux-4.9.6, linux-4.10.1, linux-4.11.12 (which also covers 4.12), and linux-4.13.16 (which also covers 4.14, 4.15, 4.165, 4.17, and 4.18).  Just check out those branches to get the code for those versions of the kernel. Once the xiafs module is working with a particular version of the kernel, the code should remain pretty stable except for needed bugfixes that come along. If the kernel you're running isn't in one of the branches, try master, or the branch closest to your current kernel.
+Along with the master branch, there are git branches for the kernels that this module is known to work with (currently linux-2.6.32, linux-3.2, linux-3.10.1, linux-3.11.1, linux-3.12.1, linux-3.13.5, linux-3.14.2, linux-3.15.3, linux-3.16.4 (which covers 3.17.0, 3.18.11, 3.19.3 and 4.0.9 as well), linux-4.1.3, linux-4.4.0, linux-4.7.10 (which covers 4.8.7), linux-4.9.6, linux-4.10.1, linux-4.11.12 (which also covers 4.12), linux-4.13.16 (which also covers 4.14, 4.15, 4.165, 4.17, and 4.18), and linux-6.1.140-debian (which was built against the Debian kernel sources shipped with bookworm).  Just check out those branches to get the code for those versions of the kernel. Once the xiafs module is working with a particular version of the kernel, the code should remain pretty stable except for needed bugfixes that come along. If the kernel you're running isn't in one of the branches, try master, or the branch closest to your current kernel.
 
 After all that is done, go into the module subdirectory (checking out the appropriate version branch if needed) in this directory. If building the module for a newer kernel, at least versions 5.3 and later, run:
 
@@ -113,7 +114,7 @@ These limits are historical, and not bugs as such.
 BUGS
 ----
 
-* Works and tested with the kernels mentioned above. Other 2.6, 3.x, and 4.x kernels are untested as of yet.
+* Works and tested with the kernels mentioned above. Other kernels are untested as of yet.
 * Has been tested with big-endian architectures (s390x, specifically) only with the linux-3.2 version. You can compile and load the module, and create and mount filesystems with the filesystem tools, but at this time you cannot mount a xiafs filesystem created on a big-endian machine on a little endian machine. I have not tested the reverse, but believe that to also be the case.
 
 TODO
