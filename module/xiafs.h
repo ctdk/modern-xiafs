@@ -194,7 +194,7 @@ extern int xiafs_empty_dir(struct inode*);
 
 extern void xiafs_truncate(struct inode *);
 extern struct inode * xiafs_iget(struct super_block *, unsigned long);
-extern int xiafs_getattr(const struct path *path, struct kstat *stat, u32 request_mask, unsigned int flags);
+extern int xiafs_getattr(struct user_namespace *, const struct path *path, struct kstat *stat, u32 request_mask, unsigned int flags);
 
 extern const struct inode_operations xiafs_file_inode_operations;
 extern const struct inode_operations xiafs_dir_inode_operations;

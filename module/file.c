@@ -34,12 +34,12 @@ const struct file_operations xiafs_file_operations = {
 /* a new setattr function is in the minix source tree. Trying to bring that in
  * and see how it works. */
 
-static int xiafs_setattr(struct dentry *dentry, struct iattr *attr)
+static int xiafs_setattr(struct user_namespace *mnt_userns, struct dentry *dentry, struct iattr *attr)
 {
         struct inode *inode = dentry->d_inode;
         int error;
 
-        error = setattr_prepare(dentry, attr);
+        error = setattr_prepare(&init_user_ns, dentry, attr);
         if (error)
                 return error;
 
@@ -52,7 +52,7 @@ static int xiafs_setattr(struct dentry *dentry, struct iattr *attr)
 		xiafs_truncate(inode);
         }
 
-        setattr_copy(inode, attr);
+        setattr_copy(&init_user_ns, inode, attr);
         mark_inode_dirty(inode);
         return 0;
 }

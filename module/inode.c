@@ -188,7 +188,7 @@ static int xiafs_fill_super(struct super_block *s, void *data, int silent)
 	if (!s->s_root)
 		goto out_iput;
 
-	if (!(s->s_flags & MS_RDONLY)) {
+	if (!sb_rdonly(s)) {
 		mark_buffer_dirty(bh);
 	}
 	return 0;
@@ -267,9 +267,9 @@ static int xiafs_writepage(struct page *page, struct writeback_control *wbc)
 	return block_write_full_page(page, xiafs_get_block, wbc);
 }
 
-static int xiafs_readpage(struct file *file, struct page *page)
+static int xiafs_read_folio(struct file *file, struct folio *folio)
 {
-	return block_read_full_page(page,xiafs_get_block);
+	return block_read_full_folio(folio, xiafs_get_block);
 }
 
 int xiafs_prepare_chunk(struct page *page, loff_t pos, unsigned len)
@@ -278,12 +278,12 @@ int xiafs_prepare_chunk(struct page *page, loff_t pos, unsigned len)
 }
 
 static int xiafs_write_begin(struct file *file, struct address_space *mapping,
-			loff_t pos, unsigned len, unsigned flags,
+			loff_t pos, unsigned len,
 			struct page **pagep, void **fsdata)
 {
 	/* *pagep = NULL; */
 	int ret;
-	ret = block_write_begin(mapping, pos, len, flags, pagep, 
+	ret = block_write_begin(mapping, pos, len, pagep, 
 				xiafs_get_block);
 
 	if (unlikely(ret)){
@@ -302,11 +302,15 @@ static sector_t xiafs_bmap(struct address_space *mapping, sector_t block)
 }
 
 static const struct address_space_operations xiafs_aops = {
-	.readpage = xiafs_readpage,
+	.dirty_folio	= block_dirty_folio,
+	.invalidate_folio = block_invalidate_folio,
+	.read_folio = xiafs_read_folio,
 	.writepage = xiafs_writepage,
 	.write_begin = xiafs_write_begin,
 	.write_end = generic_write_end,
-	.bmap = xiafs_bmap
+	.migrate_folio = buffer_migrate_folio,
+	.bmap = xiafs_bmap,
+	.direct_IO = noop_direct_IO
 };
 
 static const struct inode_operations xiafs_symlink_inode_operations = {
@@ -439,11 +443,11 @@ static int xiafs_write_inode(struct inode *inode, struct writeback_control *wbc)
 	return err;
 }
 
-int xiafs_getattr(const struct path *path, struct kstat *stat, u32 request_mask, unsigned int flags)
+int xiafs_getattr(struct user_namespace *mnt_userns, const struct path *path, struct kstat *stat, u32 request_mask, unsigned int flags)
 {
 	struct super_block *sb = path->dentry->d_sb;
 	struct inode *inode = d_inode(path->dentry);
-	generic_fillattr(inode, stat);
+	generic_fillattr(mnt_userns, inode, stat);
 	stat->blocks = (sb->s_blocksize / 512) * xiafs_blocks(stat->size, sb);
 	stat->blksize = sb->s_blocksize;
 	return 0;

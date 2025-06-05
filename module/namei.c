@@ -49,7 +49,7 @@ static struct dentry *xiafs_lookup(struct inode * dir, struct dentry *dentry, un
 	return NULL;
 }
 
-static int xiafs_mknod(struct inode * dir, struct dentry *dentry, umode_t mode, dev_t rdev)
+static int xiafs_mknod(struct user_namespace *mnt_userns, struct inode * dir, struct dentry *dentry, umode_t mode, dev_t rdev)
 {
 	int error;
 	struct inode *inode;
@@ -68,13 +68,13 @@ static int xiafs_mknod(struct inode * dir, struct dentry *dentry, umode_t mode, 
 	return error;
 }
 
-static int xiafs_create(struct inode * dir, struct dentry *dentry, umode_t mode,
+static int xiafs_create(struct user_namespace *mnt_userns, struct inode * dir, struct dentry *dentry, umode_t mode,
 		bool excl)
 {
-	return xiafs_mknod(dir, dentry, mode, 0);
+	return xiafs_mknod(mnt_userns, dir, dentry, mode, 0);
 }
 
-static int xiafs_symlink(struct inode * dir, struct dentry *dentry,
+static int xiafs_symlink(struct user_namespace *mnt_userns, struct inode * dir, struct dentry *dentry,
 	  const char * symname)
 {
 	int err = -ENAMETOOLONG;
@@ -119,7 +119,7 @@ static int xiafs_link(struct dentry * old_dentry, struct inode * dir,
 	return add_nondir(dentry, inode);
 }
 
-static int xiafs_mkdir(struct inode * dir, struct dentry *dentry, umode_t mode)
+static int xiafs_mkdir(struct user_namespace *mnt_userns, struct inode * dir, struct dentry *dentry, umode_t mode)
 {
 	struct inode * inode;
 	int err = -EMLINK;
@@ -198,7 +198,7 @@ static int xiafs_rmdir(struct inode * dir, struct dentry *dentry)
 	return err;
 }
 
-static int xiafs_rename(struct inode * old_dir, struct dentry *old_dentry,
+static int xiafs_rename(struct user_namespace *mnt_userns, struct inode * old_dir, struct dentry *old_dentry,
 			   struct inode * new_dir, struct dentry *new_dentry,
 			   unsigned int flags)
 {

@@ -32,18 +32,17 @@ static inline block_t *i_data(struct inode *inode)
 static int block_to_path(struct inode * inode, long block, int offsets[DEPTH])
 {
 	int n = 0;
-	char b[BDEVNAME_SIZE];
 	struct super_block *sb = inode->i_sb;
 	struct xiafs_sb_info *sbi = xiafs_sb(sb);
 
 	if (block < 0) {
-		printk("XIAFS-fs: block_to_path: block %ld < 0 on dev %s\n",
-			block, bdevname(sb->s_bdev, b));
+		printk("XIAFS-fs: block_to_path: block %ld < 0 on dev %pg\n",
+			block, sb->s_bdev);
 	} else if (block >= (xiafs_sb(inode->i_sb)->s_max_size/sb->s_blocksize)) {
 		if (printk_ratelimit())
 			printk("XIAFS-fs: block_to_path: "
-			       "block %ld too big on dev %s\n",
-				block, bdevname(sb->s_bdev, b));
+			       "block %ld too big on dev %pg\n",
+				block, sb->s_bdev);
 	} else if (block < 8) {
 		offsets[n++] = block;
 	} else if ((block -= 8) < XIAFS_ADDRS_PER_Z(sbi)) {
