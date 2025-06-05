@@ -50,7 +50,7 @@ Vagrant.configure(2) do |config|
   kern_disk = "./tmp/kern-src-disk.vdi"
   config.vm.provider "virtualbox" do |vb|
     # Customize the amount of memory on the VM:
-    vb.memory = "2048"
+    vb.memory = "4096"
     if !File.exist?(file_to_disk)
       vb.customize ['createhd', '--filename', file_to_disk, '--size', 4 * 1024]
       vb.customize ['createhd', '--filename', kern_disk, '--size', 30 * 1024]
@@ -74,6 +74,6 @@ Vagrant.configure(2) do |config|
   # documentation for more information about their specific syntax and use.
   config.vm.provision "shell", inline: <<-SHELL
     sudo apt-get update
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install git fakeroot linux-headers-amd64 hexedit linux-source debhelper-compat libdw-dev -y
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install git fakeroot linux-headers-amd64 hexedit linux-source debhelper-compat libdw-dev zstd -y
   SHELL
 end
