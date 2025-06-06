@@ -116,6 +116,7 @@ BUGS
 
 * Works and tested with the kernels mentioned above. Other kernels are untested as of yet.
 * Has been tested with big-endian architectures (s390x, specifically) only with the linux-3.2 version. You can compile and load the module, and create and mount filesystems with the filesystem tools, but at this time you cannot mount a xiafs filesystem created on a big-endian machine on a little endian machine. I have not tested the reverse, but believe that to also be the case.
+* This will not surprise anyone, but Xiafs is absolutely not year 2038 safe.
 
 TODO
 ----
