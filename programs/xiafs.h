@@ -44,13 +44,13 @@ struct xiafs_super_block {
     u_char  s_boot_segment[512];	/*  1st sector reserved for boot */
     uint32_t  s_zone_size;		/*  0: the name says it		 */
     uint32_t  s_nzones;			/*  1: volume size, zone aligned */ 
-    uint32_t  s_ninodes;			/*  2: # of inodes		 */
+    uint32_t  s_ninodes;		/*  2: # of inodes		 */
     uint32_t  s_ndatazones;		/*  3: # of data zones		 */
     uint32_t  s_imap_zones;		/*  4: # of imap zones           */
     uint32_t  s_zmap_zones;		/*  5: # of zmap zones		 */
     uint32_t  s_firstdatazone;		/*  6: first data zone           */
     uint32_t  s_zone_shift;		/*  7: z size = 1KB << z shift   */
-    uint32_t  s_max_size;			/*  8: max size of a single file */
+    uint32_t  s_max_size;		/*  8: max size of a single file */
     uint32_t  s_reserved0;		/*  9: reserved			 */
     uint32_t  s_reserved1;		/* 10: 				 */
     uint32_t  s_reserved2;		/* 11:				 */
