@@ -490,5 +490,6 @@ static void __exit exit_xiafs_fs(void)
 
 module_init(init_xiafs_fs)
 module_exit(exit_xiafs_fs)
+MODULE_DESCRIPTION("Xiafs file system");
 MODULE_LICENSE("GPL");
 
