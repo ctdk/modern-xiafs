@@ -28,18 +28,18 @@ const struct file_operations xiafs_file_operations = {
 	.write_iter	= generic_file_write_iter,
 	.mmap		= generic_file_mmap,
 	.fsync		= generic_file_fsync,
-	.splice_read	= generic_file_splice_read,
+	.splice_read	= filemap_splice_read,
 };
 
 /* a new setattr function is in the minix source tree. Trying to bring that in
  * and see how it works. */
 
-static int xiafs_setattr(struct user_namespace *mnt_userns, struct dentry *dentry, struct iattr *attr)
+static int xiafs_setattr(struct mnt_idmap *idmap, struct dentry *dentry, struct iattr *attr)
 {
         struct inode *inode = dentry->d_inode;
         int error;
 
-        error = setattr_prepare(&init_user_ns, dentry, attr);
+        error = setattr_prepare(&nop_mnt_idmap, dentry, attr);
         if (error)
                 return error;
 
@@ -52,7 +52,7 @@ static int xiafs_setattr(struct user_namespace *mnt_userns, struct dentry *dentr
 		xiafs_truncate(inode);
         }
 
-        setattr_copy(&init_user_ns, inode, attr);
+        setattr_copy(&nop_mnt_idmap, inode, attr);
         mark_inode_dirty(inode);
         return 0;
 }

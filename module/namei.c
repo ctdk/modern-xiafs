@@ -49,7 +49,7 @@ static struct dentry *xiafs_lookup(struct inode * dir, struct dentry *dentry, un
 	return NULL;
 }
 
-static int xiafs_mknod(struct user_namespace *mnt_userns, struct inode * dir, struct dentry *dentry, umode_t mode, dev_t rdev)
+static int xiafs_mknod(struct mnt_idmap *idmap, struct inode * dir, struct dentry *dentry, umode_t mode, dev_t rdev)
 {
 	int error;
 	struct inode *inode;
@@ -68,13 +68,13 @@ static int xiafs_mknod(struct user_namespace *mnt_userns, struct inode * dir, st
 	return error;
 }
 
-static int xiafs_create(struct user_namespace *mnt_userns, struct inode * dir, struct dentry *dentry, umode_t mode,
+static int xiafs_create(struct mnt_idmap *idmap, struct inode * dir, struct dentry *dentry, umode_t mode,
 		bool excl)
 {
-	return xiafs_mknod(mnt_userns, dir, dentry, mode, 0);
+	return xiafs_mknod(&nop_mnt_idmap, dir, dentry, mode, 0);
 }
 
-static int xiafs_symlink(struct user_namespace *mnt_userns, struct inode * dir, struct dentry *dentry,
+static int xiafs_symlink(struct mnt_idmap *idmap, struct inode * dir, struct dentry *dentry,
 	  const char * symname)
 {
 	int err = -ENAMETOOLONG;
@@ -113,13 +113,13 @@ static int xiafs_link(struct dentry * old_dentry, struct inode * dir,
 	if (inode->i_nlink >= _XIAFS_MAX_LINK)
 		return -EMLINK;
 
-	inode->i_ctime = current_time(inode);
+	inode_set_ctime_current(inode);
 	inode_inc_link_count(inode);
 	atomic_inc(&inode->i_count);
 	return add_nondir(dentry, inode);
 }
 
-static int xiafs_mkdir(struct user_namespace *mnt_userns, struct inode * dir, struct dentry *dentry, umode_t mode)
+static struct dentry *xiafs_mkdir(struct mnt_idmap *idmap, struct inode * dir, struct dentry *dentry, umode_t mode)
 {
 	struct inode * inode;
 	int err = -EMLINK;
@@ -150,7 +150,7 @@ static int xiafs_mkdir(struct user_namespace *mnt_userns, struct inode * dir, st
 
 	d_instantiate(dentry, inode);
 out:
-	return err;
+	return ERR_PTR(err);
 
 out_fail:
 	inode_dec_link_count(inode);
@@ -165,19 +165,21 @@ static int xiafs_unlink(struct inode * dir, struct dentry *dentry)
 {
 	int err = -ENOENT;
 	struct inode * inode = dentry->d_inode;
-	struct page * page;
+	struct folio * folio;
 	struct xiafs_direct * de;
 	struct xiafs_direct * de_pre;
 
-	de = xiafs_find_entry(dentry, &page, &de_pre);
+	de = xiafs_find_entry(dentry, &folio, &de_pre);
 	if (!de)
 		goto end_unlink;
 
-	err = xiafs_delete_entry(de, de_pre, page);
+	err = xiafs_delete_entry(de, de_pre, folio);
+	folio_release_kmap(folio, de);
+
 	if (err)
 		goto end_unlink;
 
-	inode->i_ctime = dir->i_ctime;
+	inode_set_ctime_to_ts(inode, inode_get_ctime(dir));
 	inode_dec_link_count(inode);
 end_unlink:
 	return err;
@@ -198,32 +200,32 @@ static int xiafs_rmdir(struct inode * dir, struct dentry *dentry)
 	return err;
 }
 
-static int xiafs_rename(struct user_namespace *mnt_userns, struct inode * old_dir, struct dentry *old_dentry,
+static int xiafs_rename(struct mnt_idmap *idmap, struct inode * old_dir, struct dentry *old_dentry,
 			   struct inode * new_dir, struct dentry *new_dentry,
 			   unsigned int flags)
 {
 	struct inode * old_inode = old_dentry->d_inode;
 	struct inode * new_inode = new_dentry->d_inode;
-	struct page * dir_page = NULL;
+	struct folio * dir_folio = NULL;
 	struct xiafs_direct * dir_de = NULL;
-	struct page * old_page;
+	struct folio * old_folio;
 	struct xiafs_direct * old_de;
 	struct xiafs_direct * old_de_pre;
 	int err = -ENOENT;
 
-	old_de = xiafs_find_entry(old_dentry, &old_page, &old_de_pre);
+	old_de = xiafs_find_entry(old_dentry, &old_folio, &old_de_pre);
 	if (!old_de)
 		goto out;
 
 	if (S_ISDIR(old_inode->i_mode)) {
 		err = -EIO;
-		dir_de = xiafs_dotdot(old_inode, &dir_page);
+		dir_de = xiafs_dotdot(old_inode, &dir_folio);
 		if (!dir_de)
 			goto out_old;
 	}
 
 	if (new_inode) {
-		struct page * new_page;
+		struct folio * new_folio;
 		struct xiafs_direct * new_de;
 
 		err = -ENOTEMPTY;
@@ -231,12 +233,13 @@ static int xiafs_rename(struct user_namespace *mnt_userns, struct inode * old_di
 			goto out_dir;
 
 		err = -ENOENT;
-		new_de = xiafs_find_entry(new_dentry, &new_page, NULL);
+		new_de = xiafs_find_entry(new_dentry, &new_folio, NULL);
 		if (!new_de)
 			goto out_dir;
 		inode_inc_link_count(old_inode);
-		xiafs_set_link(new_de, new_page, old_inode);
-		new_inode->i_ctime = current_time(new_inode);
+		xiafs_set_link(new_de, new_folio, old_inode);
+		inode_set_ctime_current(new_inode);
+
 		if (dir_de)
 			drop_nlink(new_inode);
 		inode_dec_link_count(new_inode);
@@ -256,23 +259,21 @@ static int xiafs_rename(struct user_namespace *mnt_userns, struct inode * old_di
 			inode_inc_link_count(new_dir);
 	}
 
-	xiafs_delete_entry(old_de, old_de_pre, old_page);
+	xiafs_delete_entry(old_de, old_de_pre, old_folio);
 	inode_dec_link_count(old_inode);
 
 	if (dir_de) {
-		xiafs_set_link(dir_de, dir_page, new_dir);
+		xiafs_set_link(dir_de, dir_folio, new_dir);
 		inode_dec_link_count(old_dir);
 	}
 	return 0;
 
 out_dir:
 	if (dir_de) {
-		kunmap(dir_page);
-		put_page(dir_page);
+		folio_release_kmap(old_folio, dir_de);
 	}
 out_old:
-	kunmap(old_page);
-	put_page(old_page);
+	folio_release_kmap(old_folio, old_de);
 out:
 	return err;
 }
