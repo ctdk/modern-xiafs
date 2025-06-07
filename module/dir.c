@@ -398,7 +398,7 @@ int xiafs_make_empty(struct inode *inode, struct inode *dir)
 	strcpy(de->d_name, "..");
 	de->d_name_len = 2;
 	de->d_rec_len = zsize - 12;
-	kunmap_atomic(kaddr);
+	kunmap_local(kaddr);
 
 	dir_commit_chunk(folio, 0, zsize);
 	err = xiafs_handle_dirsync(inode);
