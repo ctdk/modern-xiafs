@@ -180,21 +180,21 @@ static inline void print_mem(void const *vp, size_t n){
 extern struct inode * xiafs_new_inode(const struct inode * dir, umode_t mode, int * error);
 extern void xiafs_free_inode(struct inode * inode);
 extern unsigned long xiafs_count_free_inodes(struct xiafs_sb_info *sbi);
-extern int xiafs_prepare_chunk(struct page *page, loff_t pos, unsigned len);
+extern int xiafs_prepare_chunk(struct folio *folio, loff_t pos, unsigned len);
 
 extern void xiafs_set_inode(struct inode *, dev_t);
 extern int xiafs_add_link(struct dentry*, struct inode*);
 extern ino_t xiafs_inode_by_name(struct dentry*);
 extern int xiafs_make_empty(struct inode*, struct inode*);
-extern struct xiafs_direct *xiafs_find_entry(struct dentry*, struct page**, struct xiafs_direct**);
-extern int xiafs_delete_entry(struct xiafs_direct*, struct xiafs_direct*, struct page*);
-extern struct xiafs_direct *xiafs_dotdot(struct inode*, struct page**);
-extern void xiafs_set_link(struct xiafs_direct*, struct page*, struct inode*);
+extern struct xiafs_direct *xiafs_find_entry(struct dentry*, struct folio**, struct xiafs_direct**);
+extern int xiafs_delete_entry(struct xiafs_direct*, struct xiafs_direct*, struct folio*);
+extern struct xiafs_direct *xiafs_dotdot(struct inode*, struct folio**);
+extern int xiafs_set_link(struct xiafs_direct*, struct folio*, struct inode*);
 extern int xiafs_empty_dir(struct inode*);
 
 extern void xiafs_truncate(struct inode *);
 extern struct inode * xiafs_iget(struct super_block *, unsigned long);
-extern int xiafs_getattr(struct user_namespace *, const struct path *path, struct kstat *stat, u32 request_mask, unsigned int flags);
+extern int xiafs_getattr(struct mnt_idmap *, const struct path *path, struct kstat *stat, u32 request_mask, unsigned int flags);
 
 extern const struct inode_operations xiafs_file_inode_operations;
 extern const struct inode_operations xiafs_dir_inode_operations;

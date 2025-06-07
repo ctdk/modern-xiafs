@@ -49,6 +49,7 @@ against:
 4.17.18
 4.18.5
 6.1.140-debian
+6.15
 ```
 
 As noted below, some versions of the module are have been built and tested against other versions of the kernel. The module may work with other kernels, but that is uncertain.

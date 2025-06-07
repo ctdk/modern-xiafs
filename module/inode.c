@@ -25,6 +25,7 @@
 #include <linux/slab.h>
 #include <linux/init.h>
 #include <linux/highuid.h>
+#include <linux/mpage.h>
 #include <linux/vfs.h>
 #include <linux/writeback.h>
 
@@ -87,7 +88,7 @@ static int init_inodecache(void)
 	xiafs_inode_cachep = kmem_cache_create("xiafs_inode_cache",
 					     sizeof(struct xiafs_inode_info),
 					     0, (SLAB_RECLAIM_ACCOUNT|
-						SLAB_MEM_SPREAD),
+						SLAB_ACCOUNT),
 					     init_once);
 	if (xiafs_inode_cachep == NULL)
 		return -ENOMEM;
@@ -262,9 +263,9 @@ static int xiafs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	return 0;
 }
 
-static int xiafs_writepage(struct page *page, struct writeback_control *wbc)
+static int xiafs_writepages(struct address_space *mapping, struct writeback_control *wbc)
 {
-	return block_write_full_page(page, xiafs_get_block, wbc);
+	return mpage_writepages(mapping, wbc, xiafs_get_block);
 }
 
 static int xiafs_read_folio(struct file *file, struct folio *folio)
@@ -272,18 +273,17 @@ static int xiafs_read_folio(struct file *file, struct folio *folio)
 	return block_read_full_folio(folio, xiafs_get_block);
 }
 
-int xiafs_prepare_chunk(struct page *page, loff_t pos, unsigned len)
+int xiafs_prepare_chunk(struct folio *folio, loff_t pos, unsigned len)
 {
-	return __block_write_begin(page, pos, len, xiafs_get_block);
+	return __block_write_begin(folio, pos, len, xiafs_get_block);
 }
 
 static int xiafs_write_begin(struct file *file, struct address_space *mapping,
 			loff_t pos, unsigned len,
-			struct page **pagep, void **fsdata)
+			struct folio **foliop, void **fsdata)
 {
-	/* *pagep = NULL; */
 	int ret;
-	ret = block_write_begin(mapping, pos, len, pagep, 
+	ret = block_write_begin(mapping, pos, len, foliop, 
 				xiafs_get_block);
 
 	if (unlikely(ret)){
@@ -305,7 +305,7 @@ static const struct address_space_operations xiafs_aops = {
 	.dirty_folio	= block_dirty_folio,
 	.invalidate_folio = block_invalidate_folio,
 	.read_folio = xiafs_read_folio,
-	.writepage = xiafs_writepage,
+	.writepages = xiafs_writepages,
 	.write_begin = xiafs_write_begin,
 	.write_end = generic_write_end,
 	.migrate_folio = buffer_migrate_folio,
@@ -361,12 +361,15 @@ struct inode *xiafs_iget(struct super_block *sb, unsigned long ino)
 	i_gid_write(inode, raw_inode->i_gid);
 	set_nlink(inode, raw_inode->i_nlinks);
 	inode->i_size = raw_inode->i_size;
+	/*
 	inode->i_mtime.tv_sec = raw_inode->i_mtime;
 	inode->i_atime.tv_sec = raw_inode->i_atime;
 	inode->i_ctime.tv_sec = raw_inode->i_ctime;
 	inode->i_mtime.tv_nsec = 0;
 	inode->i_atime.tv_nsec = 0;
 	inode->i_ctime.tv_nsec = 0;
+	*/
+	inode_set_mtime_to_ts(inode, inode_set_atime_to_ts(inode, inode_set_ctime(inode, raw_inode->i_ctime, 0)));
 	if (S_ISCHR(inode->i_mode) || S_ISBLK(inode->i_mode)) {
 		inode->i_blocks=0;
 		inode->i_rdev = old_decode_dev(raw_inode->i_zone[0]);
@@ -404,9 +407,9 @@ static struct buffer_head * xiafs_update_inode(struct inode * inode)
 	raw_inode->i_gid = fs_high2lowgid(i_gid_read(inode));
 	raw_inode->i_nlinks = inode->i_nlink;
 	raw_inode->i_size = inode->i_size;
-	raw_inode->i_mtime = inode->i_mtime.tv_sec;
-	raw_inode->i_atime = inode->i_atime.tv_sec;
-	raw_inode->i_ctime = inode->i_ctime.tv_sec;
+	raw_inode->i_mtime = inode->i_mtime_sec;
+	raw_inode->i_atime = inode->i_atime_sec;
+	raw_inode->i_ctime = inode->i_ctime_sec;
 	if (S_ISCHR(inode->i_mode) || S_ISBLK(inode->i_mode))
 		raw_inode->i_zone[0] = old_encode_dev(inode->i_rdev);
 	else { 
@@ -443,11 +446,11 @@ static int xiafs_write_inode(struct inode *inode, struct writeback_control *wbc)
 	return err;
 }
 
-int xiafs_getattr(struct user_namespace *mnt_userns, const struct path *path, struct kstat *stat, u32 request_mask, unsigned int flags)
+int xiafs_getattr(struct mnt_idmap *idmap, const struct path *path, struct kstat *stat, u32 request_mask, unsigned int flags)
 {
 	struct super_block *sb = path->dentry->d_sb;
 	struct inode *inode = d_inode(path->dentry);
-	generic_fillattr(mnt_userns, inode, stat);
+	generic_fillattr(&nop_mnt_idmap, request_mask, inode, stat);
 	stat->blocks = (sb->s_blocksize / 512) * xiafs_blocks(stat->size, sb);
 	stat->blksize = sb->s_blocksize;
 	return 0;

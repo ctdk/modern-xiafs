@@ -31,15 +31,9 @@ static int xiafs_readdir(struct file *, struct dir_context *);
 const struct file_operations xiafs_dir_operations = {
 	.llseek		= generic_file_llseek,
 	.read		= generic_read_dir,
-	.iterate	= xiafs_readdir,
+	.iterate_shared	= xiafs_readdir,
 	.fsync		= generic_file_fsync,
 };
-
-static inline void dir_put_page(struct page *page)
-{
-	kunmap(page);
-	put_page(page);
-}
 
 /*
  * Return the offset into page `page_nr' of the last valid
@@ -55,38 +49,42 @@ xiafs_last_byte(struct inode *inode, unsigned long page_nr)
 	return last_byte;
 }
 
-static int dir_commit_chunk(struct page *page, loff_t pos, unsigned len)
+static void dir_commit_chunk(struct folio *folio, loff_t pos, unsigned len)
 {
-	struct address_space *mapping = page->mapping;
+	struct address_space *mapping = folio->mapping;
 	struct inode *dir = mapping->host;
-	int err = 0;
-	block_write_end(NULL, mapping, pos, len, len, page, NULL);
+	block_write_end(NULL, mapping, pos, len, len, folio, NULL);
 
 	if (pos+len > dir->i_size) {
 		i_size_write(dir, pos+len);
 		mark_inode_dirty(dir);
 	}
-	if (IS_DIRSYNC(dir))
-		err = write_one_page(page);
-	else
-		unlock_page(page);
+	/* write_on_page if (IS_DIRSYNC(dir)) moved apparently. o_O */
+	folio_unlock(folio);
+}
+
+/* Stealing this from fs/minix/dir.c. Directory handling generally seems to
+ * have been shaken up a bit between 6.1 and 6.15 somewhere along the way.
+ */
+static int xiafs_handle_dirsync(struct inode *dir)
+{
+	int err;
+
+	err = filemap_write_and_wait(dir->i_mapping);
+	if (!err)
+		err = sync_inode_metadata(dir, 1);
 	return err;
 }
 
-static struct page * dir_get_page(struct inode *dir, unsigned long n)
+static void *dir_get_folio(struct inode *dir, unsigned long n,
+		struct folio **foliop)
 {
-	struct address_space *mapping = dir->i_mapping;
-	struct page *page = read_mapping_page(mapping, n, NULL);
-	if (!IS_ERR(page)) {
-		kmap(page);
-		if (!PageUptodate(page))
-			goto fail;
-	}
-	return page;
+	struct folio *folio = read_mapping_folio(dir->i_mapping, n, NULL);
 
-fail:
-	dir_put_page(page);
-	return ERR_PTR(-EIO);
+	if (IS_ERR(folio))
+		return ERR_CAST(folio);
+	*foliop = folio;
+	return kmap_local_folio(folio, 0);
 }
 
 static inline void *xiafs_next_entry(void *de)
@@ -117,18 +115,18 @@ static int xiafs_readdir(struct file * file, struct dir_context *ctx)
 
 	for ( ; n < npages; n++, offset = 0) {
 		char *p, *kaddr, *limit;
-		struct page *page = dir_get_page(inode, n);
+		struct folio *folio;
+		kaddr = dir_get_folio(inode, n, &folio);
 
-		if (IS_ERR(page))
+		if (IS_ERR(folio))
 			continue;
-		kaddr = (char *)page_address(page);
 		p = kaddr+offset;
 		limit = kaddr + xiafs_last_byte(inode, n) - chunk_size;
 		for ( ; p <= limit; p = xiafs_next_entry(p)) {
 			xiafs_dirent *de = (xiafs_dirent *)p;
 			if (de->d_rec_len == 0){
 				printk("XIAFS: Zero-length directory entry at (%s %d)\n", WHERE_ERR);
-				dir_put_page(page);
+				folio_release_kmap(folio, p);
 				return -EIO;
 			}
 			name = de->d_name;
@@ -136,7 +134,7 @@ static int xiafs_readdir(struct file * file, struct dir_context *ctx)
 			namelen = de->d_name_len;
 			if (inumber) {
 				if (!dir_emit(ctx, name, namelen, inumber, DT_UNKNOWN)){
-					dir_put_page(page);
+					folio_release_kmap(folio, p);
 					return 0;
 				}
 			}
@@ -147,7 +145,7 @@ static int xiafs_readdir(struct file * file, struct dir_context *ctx)
 			 * directory entry rather than a fixed chunk size. */
 			ctx->pos += de->d_rec_len;
 		}
-		dir_put_page(page);
+		folio_release_kmap(folio, kaddr);
 	}
 
 	return 0;
@@ -169,37 +167,34 @@ static inline int namecompare(int len, int maxlen,
  * itself (as a parameter - res_dir). It does NOT read the inode of the
  * entry - you'll have to do that yourself if you want to.
  */
-xiafs_dirent *xiafs_find_entry(struct dentry *dentry, struct page **res_page, struct xiafs_direct **old_de)
+xiafs_dirent *xiafs_find_entry(struct dentry *dentry, struct folio **foliop, struct xiafs_direct **old_de)
 {
 	const char * name = dentry->d_name.name;
 	int namelen = dentry->d_name.len;
 	struct inode * dir = dentry->d_parent->d_inode;
 	unsigned long n;
 	unsigned long npages = dir_pages(dir);
-	struct page *page = NULL;
 	char *p;
 
 	char *namx;
 	__u32 inumber;
-	*res_page = NULL;
 
 	for (n = 0; n < npages; n++) {
 		char *kaddr, *limit;
 		unsigned short reclen;
 		xiafs_dirent *de_pre;
 
-		page = dir_get_page(dir, n);
-		if (IS_ERR(page))
+		kaddr = dir_get_folio(dir, n, foliop);
+		if (IS_ERR(kaddr))
 			continue;
 
-		kaddr = (char*)page_address(page);
-		limit = kaddr + xiafs_last_byte(dir, n) - 12;
+		limit = kaddr + xiafs_last_byte(dir, n) - _XIAFS_DIR_SIZE;
 		de_pre = (xiafs_dirent *)kaddr;
 		for (p = kaddr; p <= limit; p = xiafs_next_entry(p)) {
 			xiafs_dirent *de = (xiafs_dirent *)p;
 			if (de->d_rec_len == 0){
 				printk("XIAFS: Zero-length directory entry at (%s %d)\n", WHERE_ERR);
-				dir_put_page(page);
+				folio_release_kmap(*foliop, kaddr);
 				return ERR_PTR(-EIO);
 			}
 			namx = de->d_name;
@@ -213,12 +208,11 @@ xiafs_dirent *xiafs_find_entry(struct dentry *dentry, struct page **res_page, st
 				goto found;
 			de_pre = de;
 		}
-		dir_put_page(page);
+		folio_release_kmap(*foliop, kaddr);
 	}
 	return NULL;
 
 found:
-	*res_page = page;
 	return (xiafs_dirent *)p;
 }
 
@@ -227,7 +221,7 @@ int xiafs_add_link(struct dentry *dentry, struct inode *inode)
 	struct inode *dir = dentry->d_parent->d_inode;
 	const char * name = dentry->d_name.name;
 	int namelen = dentry->d_name.len;
-	struct page *page = NULL;
+	struct folio *folio = NULL;
 	unsigned long npages = dir_pages(dir);
 	unsigned long n;
 	char *kaddr, *p;
@@ -247,20 +241,19 @@ int xiafs_add_link(struct dentry *dentry, struct inode *inode)
 	for (n = 0; n <= npages; n++) {
 		char *limit, *dir_end;
 
-		page = dir_get_page(dir, n);
-		err = PTR_ERR(page);
-		if (IS_ERR(page))
-			goto out;
-		lock_page(page);
-		kaddr = (char*)page_address(page);
+		kaddr = dir_get_folio(dir, n, &folio);
+		if (IS_ERR(kaddr))
+			return PTR_ERR(kaddr);
+
+		folio_lock(folio);
 		dir_end = kaddr + xiafs_last_byte(dir, n);
-		limit = kaddr + PAGE_SIZE;
+		limit = kaddr + PAGE_SIZE - _XIAFS_DIR_SIZE;
 		de_pre = (xiafs_dirent *)kaddr;
 		for (p = kaddr; p < limit; p = xiafs_next_entry(p)) {
 			de = (xiafs_dirent *)p;
 			if (de->d_rec_len == 0 && p != dir_end){
 				printk("XIAFS: Zero-length directory entry at (%s %d)\n", WHERE_ERR);
-				dir_put_page(page);
+				folio_release_kmap(folio, kaddr);
 				return -EIO;
 			}
 			rec_size = de->d_rec_len;
@@ -295,15 +288,15 @@ int xiafs_add_link(struct dentry *dentry, struct inode *inode)
 				goto out_unlock;
 			de_pre = de;
 		}
-		unlock_page(page);
-		dir_put_page(page);
+		folio_unlock(folio);
+		folio_release_kmap(folio, kaddr);
 	}
 	BUG();
 	return -EINVAL;
 
 got_it:
-	pos = page_offset(page) + p - (char *)page_address(page);
-	err = xiafs_prepare_chunk(page, pos, rec_size);
+	pos = folio_pos(folio) + offset_in_folio(folio, p);
+	err = xiafs_prepare_chunk(folio, pos, rec_size);
 	if (err)
 		goto out_unlock;
 	memcpy (namx, name, namelen);
@@ -311,36 +304,35 @@ got_it:
 	de->d_name[namelen] = 0;
 	de->d_name_len=namelen;
 	de->d_ino = inode->i_ino;
-	err = dir_commit_chunk(page, pos, rec_size);
-	dir->i_mtime = dir->i_ctime = current_time(dir);
+	dir_commit_chunk(folio, pos, rec_size);
+	inode_set_mtime_to_ts(dir, inode_set_ctime_current(dir));
 	mark_inode_dirty(dir);
+	err = xiafs_handle_dirsync(dir);
 out_put:
-	dir_put_page(page);
-out:
+	folio_release_kmap(folio, kaddr);
 	return err;
 out_unlock:
-	unlock_page(page);
+	folio_unlock(folio);
 	goto out_put;
 }
 
-int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, struct page *page)
+int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, struct folio *folio)
 {
-	struct address_space *mapping = page->mapping;
-	struct inode *inode = (struct inode*)mapping->host;
-	char *kaddr = page_address(page);
-	loff_t pos = page_offset(page) + (char*)de - kaddr;
+	struct inode *inode = folio->mapping->host;
+	loff_t pos = folio_pos(folio) + offset_in_folio(folio, de);
 	loff_t tmp_pos;
 	unsigned len = de->d_rec_len;
 	int err;
 
-	lock_page(page);
+	folio_lock(folio);
 	if (de == de_pre){
 		de->d_ino = 0;
 	} else {
 	/* Join the previous entry with this one. */
 		while (de_pre->d_rec_len + (u_char *)de_pre < (u_char *)de){
-			if (de_pre->d_rec_len < 12){
+			if (de_pre->d_rec_len < _XIAFS_DIR_SIZE){
 				printk("XIA-FS: bad directory entry (%s %d)\n", WHERE_ERR);
+				folio_unlock(folio);
 				return -1;
 			}
 			de_pre=(struct xiafs_direct *)(de_pre->d_rec_len + (u_char *)de_pre);
@@ -351,7 +343,7 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, str
 			}
 		/* d_rec_len can only be XIAFS_ZSIZE at most. Don't join them
 		 * together if they'd go over */
-		tmp_pos = page_offset(page) + (char *)de_pre - kaddr;
+		tmp_pos = folio_pos(folio) + offset_in_folio(folio, de_pre);
 		if (((tmp_pos & (XIAFS_ZSIZE(xiafs_sb(inode->i_sb)) - 1)) + de_pre->d_rec_len + de->d_rec_len) <= XIAFS_ZSIZE(xiafs_sb(inode->i_sb))){
 			de_pre->d_rec_len += de->d_rec_len;
 			len = de_pre->d_rec_len;
@@ -362,38 +354,38 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, str
 		}
 	}
 
-	err = xiafs_prepare_chunk(page, pos, len);
-
-	if (err == 0) {
-		err = dir_commit_chunk(page, pos, len);
-	} else {
-		unlock_page(page);
+	err = xiafs_prepare_chunk(folio, pos, len);
+	if (err) {
+		folio_unlock(folio);
+		return err;
 	}
-	dir_put_page(page);
-	inode->i_ctime = inode->i_mtime = current_time(inode);
+
+	dir_commit_chunk(folio, pos, len);
+	inode_set_mtime_to_ts(inode, inode_set_ctime_current(inode));
 	mark_inode_dirty(inode);
-	return err;
+
+	return xiafs_handle_dirsync(inode);
 }
 
 int xiafs_make_empty(struct inode *inode, struct inode *dir)
 {
-	struct address_space *mapping = inode->i_mapping;
-	struct page *page = grab_cache_page(mapping, 0);
+	struct folio *folio = filemap_grab_folio(inode->i_mapping, 0);
 	char *kaddr;
 	int err;
 	unsigned int zsize = XIAFS_ZSIZE(xiafs_sb(dir->i_sb));
 	xiafs_dirent *de;
 
-	if (!page)
-		return -ENOMEM;
-	err = xiafs_prepare_chunk(page, 0, zsize);
+	if (IS_ERR(folio))
+		return PTR_ERR(folio);
+
+	err = xiafs_prepare_chunk(folio, 0, zsize);
 	if (err) {
-		unlock_page(page);
+		folio_unlock(folio);
 		goto fail;
 	}
 
-	kaddr = kmap_atomic(page);
-	memset(kaddr, 0, PAGE_SIZE);
+	kaddr = kmap_local_folio(folio, 0);
+	memset(kaddr, 0, folio_size(folio));
 
 	de = (xiafs_dirent *)kaddr;
 
@@ -406,11 +398,12 @@ int xiafs_make_empty(struct inode *inode, struct inode *dir)
 	strcpy(de->d_name, "..");
 	de->d_name_len = 2;
 	de->d_rec_len = zsize - 12;
-	kunmap_atomic(kaddr);
+	kunmap_local(kaddr);
 
-	err = dir_commit_chunk(page, 0, zsize);
+	dir_commit_chunk(folio, 0, zsize);
+	err = xiafs_handle_dirsync(inode);
 fail:
-	put_page(page);
+	folio_put(folio);
 	return err;
 }
 
@@ -419,25 +412,24 @@ fail:
  */
 int xiafs_empty_dir(struct inode * inode)
 {
-	struct page *page = NULL;
+	struct folio *folio = NULL;
 	unsigned long i, npages = dir_pages(inode);
-	char *name;
+	char *name, *kaddr;
 	__u32 inumber;
 
 	for (i = 0; i < npages; i++) {
-		char *p, *kaddr, *limit;
+		char *p, *limit;
 
-		page = dir_get_page(inode, i);
-		if (IS_ERR(page))
+		kaddr = dir_get_folio(inode, i, &folio);
+		if (IS_ERR(kaddr))
 			continue;
 
-		kaddr = (char *)page_address(page);
 		limit = kaddr + xiafs_last_byte(inode, i) - _XIAFS_DIR_SIZE;
 		for (p = kaddr; p <= limit; p = xiafs_next_entry(p)) {
 			xiafs_dirent *de = (xiafs_dirent *)p;
 			if (de->d_rec_len == 0){
 				printk("XIAFS: Zero-length directory entry at (%s %d)\n", WHERE_ERR);
-				dir_put_page(page);
+				folio_release_kmap(folio, kaddr);
 				return -EIO;
 			}
 			name = de->d_name;
@@ -456,60 +448,58 @@ int xiafs_empty_dir(struct inode * inode)
 					goto not_empty;
 			}
 		}
-		dir_put_page(page);
+		folio_release_kmap(folio, kaddr);
 	}
 	return 1;
 
 not_empty:
-	dir_put_page(page);
+	folio_release_kmap(folio, kaddr);
 	return 0;
 }
 
 /* Releases the page */
-void xiafs_set_link(struct xiafs_direct *de, struct page *page,
+int xiafs_set_link(struct xiafs_direct *de, struct folio *folio,
 	struct inode *inode)
 {
-	struct address_space *mapping = page->mapping;
-	struct inode *dir = mapping->host;
-	loff_t pos = page_offset(page) +
-			(char *)de-(char*)page_address(page);
+	struct inode *dir = folio->mapping->host;
+	loff_t pos = folio_pos(folio) + offset_in_folio(folio, de);
 	int err;
 
-	lock_page(page);
+	folio_lock(folio);
 
-	err = xiafs_prepare_chunk(page, pos, de->d_rec_len);
-	if (err == 0) {
-		de->d_ino = inode->i_ino;
-		err = dir_commit_chunk(page, pos, de->d_rec_len);
-	} else {
-		unlock_page(page);
+	err = xiafs_prepare_chunk(folio, pos, de->d_rec_len);
+	if (err) {
+		folio_unlock(folio);
+		return err;
 	}
-	dir_put_page(page);
-	dir->i_mtime = dir->i_ctime = current_time(inode);
+
+	de->d_ino = inode->i_ino;
+	dir_commit_chunk(folio, pos, de->d_rec_len);
+
+	inode_set_mtime_to_ts(dir, inode_set_ctime_current(dir));
 	mark_inode_dirty(dir);
+	return xiafs_handle_dirsync(dir);
 }
 
-struct xiafs_direct * xiafs_dotdot (struct inode *dir, struct page **p)
+struct xiafs_direct * xiafs_dotdot (struct inode *dir, struct folio **foliop)
 {
-	struct page *page = dir_get_page(dir, 0);
-	struct xiafs_direct *de = NULL;
+	struct xiafs_direct *de = dir_get_folio(dir, 0, foliop);
 
-	if (!IS_ERR(page)) {
-		de = xiafs_next_entry(page_address(page));
-		*p = page;
+	if (!IS_ERR(de)) {
+		 return xiafs_next_entry(de);
 	}
-	return de;
+	return NULL;
 }
 
 ino_t xiafs_inode_by_name(struct dentry *dentry)
 {
-	struct page *page;
-	struct xiafs_direct *de = xiafs_find_entry(dentry, &page, NULL);
+	struct folio *folio;
+	struct xiafs_direct *de = xiafs_find_entry(dentry, &folio, NULL);
 	ino_t res = 0;
 
 	if (de) {
 		res = de->d_ino;
-		dir_put_page(page);
+		folio_release_kmap(folio, de);
 	}
 	return res;
 }
