@@ -1,3 +1,7 @@
+// Before diving into this, some
+// [background on bitmaps](https://en.wikipedia.org/wiki/Bit_array) may be
+// useful. The functions in this file are, at least, well named.
+
 /*
  * Porting work to modern kernels copyright (C) Jeremy Bingham, 2013.
  * Based on work by Linus Torvalds, Q. Frank Xia, and others as noted.
@@ -6,6 +10,10 @@
  * filesystem code, but based on the original xiafs code in pre-2.1.21 or so
  * kernels.
  */
+
+// Many of the functions in this file haven't changed a whole lot since the
+// previous annotated xiafs code for version 3.12.1. Major changes will be noted
+// and explained.
 
 /*
  *  linux/fs/xiafs/bitmap.c
@@ -27,15 +35,26 @@
 #include <linux/bitops.h>
 #include <linux/sched.h>
 
+// Taken straight from the original xiafs code in the ancient Linux kernel.
+// Interestingly, it's the reverse of the nibblemap found in older versions of
+// the ext2/3 and minix bitmap code.
+
 static const int nibblemap[] = { 0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4 };
 
 static DEFINE_SPINLOCK(bitmap_lock);
+
+// Helper function for counting used inodes and blocks. Walks through the
+// provided map buffer and returns the number of used items. The functions that
+// call this subtract this number from the overall number of inodes or blocks.
 
 static unsigned long count_used(struct buffer_head *map[], unsigned numblocks, __u32 numbits)
 {
 	unsigned long i, j, sum = 0;
 	struct buffer_head *bh;
   
+// This could stand to be rewritten entirely. Doing it this way, with the
+// nibblemap, is the old way it was done.
+
 	for (i=0; i<numblocks; i++) {
 		if (!(bh=map[i])) 
 			return(0);
@@ -50,32 +69,71 @@ static unsigned long count_used(struct buffer_head *map[], unsigned numblocks, _
 	return(sum);
 }
 
+// Free a block.
+
 void xiafs_free_block(struct inode *inode, unsigned long block)
 {
 	struct super_block *sb = inode->i_sb;
 	struct xiafs_sb_info *sbi = xiafs_sb(sb);
 	struct buffer_head *bh;
+
+// Calculate the bitshift for finding the zone the block is in and which bit in
+// the bitmap refers to that block.
+
 	int k = sb->s_blocksize_bits + 3;
 	unsigned long bit, zone;
+
+// Trying to free a block that's out of range is very bad.
 
 	if (block < sbi->s_firstdatazone || block >= sbi->s_nzones) {
 		printk("Trying to free block not in datazone\n");
 		return;
 	}
+
+// Start calculating the zone the block is in. First subtract the location of
+// the first data zone (+1) from the block we're freeing.
+
 	zone = block - sbi->s_firstdatazone + 1;
+
+// By left shifting the bitshift calculated above and ANDing the zone with that
+// (minus 1), we get the bit in the bitmap referring to this block.
+
 	bit = zone & ((1<<k) - 1);
+
+// Right bitshift the zone by k to determine which bitmap slot to use.
+
 	zone >>= k;
+
+// Don't want to use a non-existent bitmap either.
+
 	if (zone >= sbi->s_zmap_zones) {
 		printk("xiafs_free_block: nonexistent bitmap buffer\n");
 		return;
 	}
+
+// Get the buffer for the zone map this block is mapped in, and take the mutex.
+
 	bh = sbi->s_zmap_buf[zone];
 	spin_lock(&bitmap_lock);
+
+// Test and clear the bit for this block in the bitmap. If it's already cleared,
+// then the block was already freed.
+
 	if (!xiafs_test_and_clear_bit(bit, bh->b_data))
 		printk("xiafs_free_block (%s:%lu): bit already cleared\n",
 		       sb->s_id, block);
+
+// Decrease the number of blocks on disk this inode is using. It always ends up
+// being 2 because xiafs only uses 1024 byte blocks.
+
 	inode->i_blocks -= 2 << XIAFS_ZSHIFT(sbi);
+
+// Release the mutex.
+
 	spin_unlock(&bitmap_lock);
+
+// Mark the buffer as dirty so it gets written out when the kernel's ready.
+
 	mark_buffer_dirty(bh);
 	return;
 }
