@@ -1,6 +1,11 @@
 #ifndef _XIAFS_H
 #define _XIAFS_H
 
+// `xiafs.h` collects everything that was in the old header files and brings
+// them together. Formerly there were a few header files, but for simplicity
+// they've been merged. There are a lot of important definitions here, though,
+// and it's the best place to start for understanding how xiafs works.
+
 /*
  * Porting work to modern kernels copyright (C) Jeremy Bingham, 2013.
  * Based on work by Linus Torvalds, Q. Frank Xia, and others as noted.
@@ -22,29 +27,115 @@
 
 #include <linux/fs.h>
 
+// The xiafs magic number. This number is used in the superblock to identify to
+// the kernel that this is, in fact, a xiafs filesystem. Incidentally, the hex
+// number `0x012FD16D` is "19911021" in decimal, which may be the date the
+// original author started working on xiafs. Other filesystems, unsurprisingly,
+// have their own magic numbers.
+
 #define _XIAFS_SUPER_MAGIC 0x012FD16D
+
+// The root and bad inode numbers for xiafs are reversed from what they are for
+// ext2 and UFS.
+
 #define _XIAFS_ROOT_INO 1
 #define _XIAFS_BAD_INO  2
+
+// The maximum number of hard links a file can have. Why it's 64000 and not
+// 65536, or even 32000 like ext2, is a bit of a mystery. It's what was defined
+// in the original xiafs code, though.
+
 #define _XIAFS_MAX_LINK 64000
+
+// A relic of figuring out how to make the hollowed out Minix directory code
+// work with the xiafs dentries, which are quite different.
+
 /* I think this is the equivalent of s_dirsize in the minix stuff */
 #define _XIAFS_DIR_SIZE 12
+
+// The number of block pointers in an inode. For xiafs it is 10: 8 direct block
+// pointers, one indirect block pointer, and one doubly indirect block pointer.
+
 #define _XIAFS_NUM_BLOCK_POINTERS 10
+
+// Unlike the Minix filesystem (but like ext2), directory entries in xiafs are
+// not fixed length. The original author of xiafs apparently picked a maximum
+// file name length to keep each directory entry at a maximum of 256 bytes. A
+// max file name length of 255 bytes is more standard.
 
 #define _XIAFS_NAME_LEN 248
 
+// Self-explanatory, but important. How many inodes can fit in a block? This
+// macro will tell you. Theoretically xiafs could use blocks of varying sizes,
+// but in actual fact elsewhere it's hard coded to be 1024 bytes to a block.
+// Thus, there are 16 inodes per block.
+
 #define _XIAFS_INODES_PER_BLOCK ((BLOCK_SIZE)/(sizeof(struct xiafs_inode)))
 
+// # The Inode
+
+// The on-disk xiafs inode. Taking up only 64 bytes, it's less complicated than
+// the ext2/3/4 inode (or most any other filesystem's inodes you'd come across),
+// except for storing the number of blocks used in the topmost byte of the first
+// three block pointers, but it illustrates the basic data about a file an inode
+// would be expected to have. Breaking it down:
+
 struct xiafs_inode {		/* 64 bytes */
+
+// The file mode. Describes the type of file (socket, symbolic link, regular
+// file, directory, block or character device, directory, or FIFO), if it's
+// setuid, setgid, or has the sticky bit set, and the usual Unix access
+// permissions.
+
     __u16   i_mode;
+
+// The number of hard links to the file. See `_XIAFS_MAX_LINK`.
     __u16  i_nlinks;
+
+// UID of the file's owner.
+
     __u16    i_uid;
+
+// GID of the file.
+
     __u16    i_gid;
+
+// How big the file is in bytes.
+
     __u32   i_size;		/* 8 */
+
+// Change, access, and modification timestamps. It seems like `ctime` ought to
+// stand for "creation time", but it doesn't. These timestamps only have
+// resolution to the second; this has to be addressed in `inode.c` when loading
+// the xiafs inode data into the kernel's inode struct because it uses a struct
+// for `ctime`/`atime`/`mtime` that keeps time in both seconds and nanoseconds.
+
     __u32   i_ctime;
     __u32   i_atime;
     __u32   i_mtime;
+
+// The file's block pointers. Xiafs uses the first 8 blocks as direct block
+// pointers, with an indirect block pointer block and a doubly indrect block
+// pointer block in the ninth and tenth slots respectively. The indirect block
+// pointer points to a block that contains pointers to additional blocks on the
+// disk. The doubly indirect pointer block pointer points to a block that
+// contains pointers to blocks that then contains pointers to blocks to use for
+// data. Since in practice xiafs is limited to using 1024 byte blocks, this
+// gives a maximum file size of about 64 MB. Trebly indirect blocks, which are
+// just like the doubly indirect blocks with an additional layer of block
+// pointers, as seen in ext2 and ext3 (for example), allow even bigger file
+// sizes. The Wikipedia article on [inode pointer structures](https://en.wikipedia.org/wiki/Inode_pointer_structure)
+// explains it pretty well.
+
     __u32  i_zone[_XIAFS_NUM_BLOCK_POINTERS];
 };
+
+// # The Superblock
+//
+// The xiafs superblock holds information and metadata about the filesystem on
+// the device. With xiafs many of these fields are only of historical interest,
+// but some are actually relevant. If the superblock is corrupted, the
+// filesystem can't be mounted.
 
 /*
  * linux super-block data on disk
