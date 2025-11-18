@@ -364,10 +364,19 @@ found:
 
 int xiafs_add_link(struct dentry *dentry, struct inode *inode)
 {
+
+// The directory to add the link to.
+
 	struct inode *dir = dentry->d_parent->d_inode;
+
+// The desired name and name length.
+
 	const char * name = dentry->d_name.name;
 	int namelen = dentry->d_name.len;
 	struct folio *folio = NULL;
+
+// The number of pages this directory is using.
+
 	unsigned long npages = dir_pages(dir);
 	unsigned long n;
 	char *kaddr, *p;
@@ -384,25 +393,63 @@ int xiafs_add_link(struct dentry *dentry, struct inode *inode)
 	 * This code plays outside i_size, so it locks the page
 	 * to protect that region.
 	 */
+
+// Go through the pages looking for a good place to add the link.
+
 	for (n = 0; n <= npages; n++) {
 		char *limit, *dir_end;
+
+// Get the folio and set the beginning address. A lot of the code in this
+// function is similar to the `xiafs_readdir` and `xiafs_find_entry` functions.
 
 		kaddr = dir_get_folio(dir, n, &folio);
 		if (IS_ERR(kaddr))
 			return PTR_ERR(kaddr);
 
 		folio_lock(folio);
+
+// Set the end of the directory and the limit on this page's size.
+
 		dir_end = kaddr + xiafs_last_byte(dir, n);
 		limit = kaddr + PAGE_SIZE - _XIAFS_DIR_SIZE;
+
+// Cast `kaddr` to be a xiafs directory entry and store it as the previous
+// entry for the first round of the `for` loop.
+
 		de_pre = (xiafs_dirent *)kaddr;
+
+// Go through this page's dentries.
+
 		for (p = kaddr; p < limit; p = xiafs_next_entry(p)) {
+
+// As before, cast `p` to a xiafs directory entry.
+
 			de = (xiafs_dirent *)p;
+
+// If the dentry's record length is 0 and we're not at the end of the directory,
+// bail with an error because something is wrong with the filesystem.
+
 			if (de->d_rec_len == 0 && p != dir_end){
 				printk("XIAFS: Zero-length directory entry at (%s %d)\n", WHERE_ERR);
 				folio_release_kmap(folio, kaddr);
 				return -EIO;
 			}
 			rec_size = de->d_rec_len;
+
+// If we can fit the record for this link in the space of another dentry, great.
+// This can happen if a link was deleted earlier and had its length added to the
+// previous dentry, or if we're on the last entry in the list, in which case the
+// dentry's record length exends to the end of the 1024 block. This block size
+// mismatch between xiafs expecting 1024 byte blocks and the kernel using 
+// (architecture dependent, but on x86 4KB) pages of a potentially different
+// size causes some interesting issues.
+//
+// Anyway, if we can fit the dentry inside another dentry, set the pointer to
+// the previous entry to the current entry, set the current dentry pointer to
+// just after the now previous entry, set the current dentry record length equal
+// to the previous entry's former length minus its current length and its inode
+// number to 0, and shrink the previous entry's record length to its new length.
+
 			if (de->d_ino && RNDUP4(de->d_name_len)+RNDUP4(namelen)+16 <= de->d_rec_len){
 				/* We have an entry we can get another one 
 				 * inside of. */
@@ -415,9 +462,16 @@ int xiafs_add_link(struct dentry *dentry, struct inode *inode)
 			}
 			namx = de->d_name;
 			inumber = de->d_ino;
+
+// If `p == dir_end`, we've smacked up against the end of the directory. Add
+// another 1k bytes to the directory.
+
 			if (p == dir_end) {
 				/* We hit i_size */
 				de->d_ino = 0;
+
+// In practice, this does not seem to be an issue.
+
 				/* NOTE: need to test what happens when dirsize
 				 * is equal to the page size, or when we go over
 				 * the initial XIAFS_ZSIZE. */
@@ -427,9 +481,15 @@ int xiafs_add_link(struct dentry *dentry, struct inode *inode)
 				 * XIAFS_ZSIZE */
 				goto got_it;
 			}
+
+// If it fits, we have what we needed.
+
 			if (!inumber && RNDUP4(namelen)+ 8 <= de->d_rec_len)
 				goto got_it;
 			err = -EEXIST;
+
+// Make sure this entry doesn't have the same name as the one we want to add.
+
 			if (namecompare(namelen, _XIAFS_NAME_LEN, name, namx))
 				goto out_unlock;
 			de_pre = de;
@@ -437,8 +497,15 @@ int xiafs_add_link(struct dentry *dentry, struct inode *inode)
 		folio_unlock(folio);
 		folio_release_kmap(folio, kaddr);
 	}
+
+// If it gets here, something went wrong.
+
 	BUG();
 	return -EINVAL;
+
+// If it's here, then everything went great. Fill the dentry's name and inode
+// number, commit the chunk of memory, and update the directory's change and
+// modification times.
 
 got_it:
 	pos = folio_pos(folio) + offset_in_folio(folio, p);
@@ -451,9 +518,23 @@ got_it:
 	de->d_name_len=namelen;
 	de->d_ino = inode->i_ino;
 	dir_commit_chunk(folio, pos, rec_size);
+
+// Another example of how handling the timestamps is different than it used to
+// be.
+
 	inode_set_mtime_to_ts(dir, inode_set_ctime_current(dir));
 	mark_inode_dirty(dir);
 	err = xiafs_handle_dirsync(dir);
+
+// In normal execution flow, the code proceeds to this point naturally and
+// returns. If there was an error, though, it jumps past the all the code that
+// follows using a goto to the `out_unlock` label, where it unlocks the folio
+// and then jumps back up to `out_put`, essentially resuming normal execution.
+// It seems odd, but this way it's able to put the error handling code in a safe
+// place that can never be normally reached because of the `return err;` line.
+// By jumping back up to `out_put`, we don't have to repeat the call to
+// `folio_release_kmap`. It does feel weird though.
+
 out_put:
 	folio_release_kmap(folio, kaddr);
 	return err;
@@ -462,20 +543,45 @@ out_unlock:
 	goto out_put;
 }
 
+// Standing in opposition to the previous function, this deletes entries from a
+// directory.
+
 int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, struct folio *folio)
 {
+
+// Get the dentry's inode.
+
 	struct inode *inode = folio->mapping->host;
+
+// Get the dentry's position in the folio.
+
 	loff_t pos = folio_pos(folio) + offset_in_folio(folio, de);
 	loff_t tmp_pos;
 	unsigned len = de->d_rec_len;
 	int err;
 
+// Lock the folio to keep someone from changing it from under us.
+
 	folio_lock(folio);
+
+// If the entry and the previous entry are the same, life is a lot simpler. Just
+// clear the dentry's inode number.
+
 	if (de == de_pre){
 		de->d_ino = 0;
 	} else {
+
+// Otherwise, we have to extend the previous entry (`de_pre`) to cover the space
+// used by the dentry to be deleted.
+
 	/* Join the previous entry with this one. */
+
+// Move `de_pre` up the chain, if necessary.
+
 		while (de_pre->d_rec_len + (u_char *)de_pre < (u_char *)de){
+
+// Bail on a bad directory, if one is found.
+
 			if (de_pre->d_rec_len < _XIAFS_DIR_SIZE){
 				printk("XIA-FS: bad directory entry (%s %d)\n", WHERE_ERR);
 				folio_unlock(folio);
@@ -483,10 +589,20 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, str
 			}
 			de_pre=(struct xiafs_direct *)(de_pre->d_rec_len + (u_char *)de_pre);
 		}
+
+// If `de_pre` extends past the directory entry we're deleting, something is
+// very wrong.
+
 		if (de_pre->d_rec_len + (u_char *)de_pre > (u_char *)de){
 			printk("XIA-FS: bad directory entry (%s %d)\n", WHERE_ERR);
 			return -1;
 			}
+
+// As this comment says, don't extend `de_pre` to cover the deleted entry if it
+// would make `de_pre->d_rec_len` be greater than `XIAFS_ZSIZE`. If that is the
+// case, just set the deleted entry's inode to 0. It may be able to be used
+// later.
+
 		/* d_rec_len can only be XIAFS_ZSIZE at most. Don't join them
 		 * together if they'd go over */
 		tmp_pos = folio_pos(folio) + offset_in_folio(folio, de_pre);
@@ -500,6 +616,7 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, str
 		}
 	}
 
+// Prepare and commit the change.
 	err = xiafs_prepare_chunk(folio, pos, len);
 	if (err) {
 		folio_unlock(folio);
@@ -507,44 +624,71 @@ int xiafs_delete_entry(struct xiafs_direct *de, struct xiafs_direct *de_pre, str
 	}
 
 	dir_commit_chunk(folio, pos, len);
+
+// Update the inode's change and modification times and mark it dirty.
+
 	inode_set_mtime_to_ts(inode, inode_set_ctime_current(inode));
 	mark_inode_dirty(inode);
 
 	return xiafs_handle_dirsync(inode);
 }
 
+// Make an empty directory.
+
 int xiafs_make_empty(struct inode *inode, struct inode *dir)
 {
+
+// Get the folio.
 	struct folio *folio = filemap_grab_folio(inode->i_mapping, 0);
 	char *kaddr;
 	int err;
+
+// A brand new directory always gets `XIAFS_ZSIZE` bytes, which as mentioned
+// before always ends up being 1024 bytes.
+
 	unsigned int zsize = XIAFS_ZSIZE(xiafs_sb(dir->i_sb));
 	xiafs_dirent *de;
 
+// If we didn't get the folio we have to bail.
 	if (IS_ERR(folio))
 		return PTR_ERR(folio);
 
+// Prepare the page, bombing out if it doesn't work.
 	err = xiafs_prepare_chunk(folio, 0, zsize);
 	if (err) {
 		folio_unlock(folio);
 		goto fail;
 	}
 
+// Get the page's address.
 	kaddr = kmap_local_folio(folio, 0);
+
+// Zero out the page's data.
 	memset(kaddr, 0, folio_size(folio));
 
+// Cast that address to a directory entry.
 	de = (xiafs_dirent *)kaddr;
+
+// Make the `.` and `..` entries that every directory has.
 
 	de->d_ino = inode->i_ino;
 	strcpy(de->d_name, ".");
 	de->d_name_len = 1;
 	de->d_rec_len = 12;
 	de = xiafs_next_entry(de);
+
+// `..`, of course, refers to the parent directory and shares the same inode.
+
 	de->d_ino = dir->i_ino;
 	strcpy(de->d_name, "..");
 	de->d_name_len = 2;
+
+// `..`'s record length extends to the end of the 1k block, except for the
+// space used by `.`.
 	de->d_rec_len = zsize - 12;
 	kunmap_local(kaddr);
+
+// Commit and return.
 
 	dir_commit_chunk(folio, 0, zsize);
 	err = xiafs_handle_dirsync(inode);
@@ -552,6 +696,9 @@ fail:
 	folio_put(folio);
 	return err;
 }
+
+// As the comment here indicates, check to see that the specified directory is
+// empty.
 
 /*
  * routine to check that the specified directory is empty (for rmdir)
@@ -563,6 +710,10 @@ int xiafs_empty_dir(struct inode * inode)
 	char *name, *kaddr;
 	__u32 inumber;
 
+// This rodeo's going to feel awfully familiar. It's the same general process
+// for walking through the directory's pages of memory that's in may of the
+// other functions in this file.
+
 	for (i = 0; i < npages; i++) {
 		char *p, *limit;
 
@@ -571,8 +722,15 @@ int xiafs_empty_dir(struct inode * inode)
 			continue;
 
 		limit = kaddr + xiafs_last_byte(inode, i) - _XIAFS_DIR_SIZE;
+
+// Loop over each dentry in the page.
+
 		for (p = kaddr; p <= limit; p = xiafs_next_entry(p)) {
 			xiafs_dirent *de = (xiafs_dirent *)p;
+
+// Even before checking the inode number, check to see if the entry is so messed
+// up that `d_rec_len` is 0.
+
 			if (de->d_rec_len == 0){
 				printk("XIAFS: Zero-length directory entry at (%s %d)\n", WHERE_ERR);
 				folio_release_kmap(folio, kaddr);
@@ -581,35 +739,65 @@ int xiafs_empty_dir(struct inode * inode)
 			name = de->d_name;
 			inumber = de->d_ino;
 
+// If the inode number is 0, that means for our purposes the entry doesn't
+// exist. There are some situation where an entry has been deleted, but the
+// previous entry couldn't be extended to cover that entry's space in the dentry
+// list. If the inode number _isn't_ zero, though, it needs to be checked for
+// being anything other than `.` and `..`.
 			if (inumber != 0) {
 				/* check for . and .. */
+
+// Obviously, if the first character in the name isn't `.`, it isn't `.` or
+// `..`.
 				if (name[0] != '.')
 					goto not_empty;
+// This would be a weird condition to satisfy, if the entry's name is `.` but
+// the inode number of the entry wasn't the directory's inode. Still, this
+// condition gets checked.
 				if (!name[1]) {
 					if (inumber != inode->i_ino)
 						goto not_empty;
+// If it's not `..` it's not empty.
 				} else if (name[1] != '.')
 					goto not_empty;
+// If there's a third character of any sort, it's obviously neither `.` nor
+// `..`.
 				else if (name[2])
 					goto not_empty;
 			}
 		}
 		folio_release_kmap(folio, kaddr);
 	}
+
+// The directory turned out to be empty.
+
 	return 1;
+
+// If the directory wasn't empty, it jumps here with a goto, releases the folio,
+// and returns false.
 
 not_empty:
 	folio_release_kmap(folio, kaddr);
 	return 0;
 }
 
+// This is only called by `xiafs_rename` in `namei.c`. As the name implies, it
+// sets the link for the entry and inode.
 /* Releases the page */
 int xiafs_set_link(struct xiafs_direct *de, struct folio *folio,
 	struct inode *inode)
 {
+
+// Get the directory the entry's being added to.
+
 	struct inode *dir = folio->mapping->host;
+
+// Get the position on the page.
+
 	loff_t pos = folio_pos(folio) + offset_in_folio(folio, de);
 	int err;
+
+// Lock the folio and prepare the chunk for writing.
 
 	folio_lock(folio);
 
@@ -619,23 +807,35 @@ int xiafs_set_link(struct xiafs_direct *de, struct folio *folio,
 		return err;
 	}
 
+// If all went well, set the inode number and commit the chunk.
 	de->d_ino = inode->i_ino;
 	dir_commit_chunk(folio, pos, de->d_rec_len);
+
+// Release the page, set modified and change times on the host directory, and
+// mark the directory as dirty.
 
 	inode_set_mtime_to_ts(dir, inode_set_ctime_current(dir));
 	mark_inode_dirty(dir);
 	return xiafs_handle_dirsync(dir);
 }
 
+// Get the parent directory of this inode.
+
 struct xiafs_direct * xiafs_dotdot (struct inode *dir, struct folio **foliop)
 {
 	struct xiafs_direct *de = dir_get_folio(dir, 0, foliop);
 
 	if (!IS_ERR(de)) {
+
+// `..` is always the second entry in the list. Return that directly.
+
 		 return xiafs_next_entry(de);
 	}
 	return NULL;
 }
+
+// Wrapper function around `xiafs_find_entry` that returns the inode number for
+// the given directory entry.
 
 ino_t xiafs_inode_by_name(struct dentry *dentry)
 {
