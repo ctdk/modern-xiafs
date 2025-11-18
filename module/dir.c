@@ -1,3 +1,8 @@
+// Many of the functions in this file are used in `namei.c`. Interestingly,
+// between kernel versions 3.12.1 and 6.15 many of the functions defined here
+// were removed because they were replaced by new functions with the same
+// functionality in the kernel's filesystem API.
+
 /*
  * Porting work to modern kernels copyright (C) Jeremy Bingham, 2013.
  * Based on work by Linus Torvalds, Q. Frank Xia, and others as noted.
@@ -26,7 +31,13 @@ typedef struct xiafs_direct xiafs_dirent;
 
 static int xiafs_readdir(struct file *, struct dir_context *);
 
+// Round a number up to the nearest number divisible by 4.
+
 #define RNDUP4(x)	((3+(u_long)(x)) & ~3)
+
+// Set the function pointers for directory specific file operations. Only one of
+// the `xiafs_dir_operations` is a filesystem specific function:
+// `xiafs_readdir`. The others use generic functions.
 
 const struct file_operations xiafs_dir_operations = {
 	.llseek		= generic_file_llseek,
@@ -34,6 +45,15 @@ const struct file_operations xiafs_dir_operations = {
 	.iterate_shared	= xiafs_readdir,
 	.fsync		= generic_file_fsync,
 };
+
+// The last byte is either equal to the page size (which is architecture
+// dependent, but is 4KB on x86), or if this is the last page the directory is
+// using for its dentry list, the inode's size ANDed with the page size minus
+// one. In a completely made up example, if the inode's size is 8888 bytes and
+// `page_nr` was 2 (meaning that the page being requested is the last one the
+// directory is using, since three 4KB pages are needed to hold 8888 bytes), by
+// ANDing 8888 with `(PAGE_SIZE - 1)` we get 696 back as the last used byte on
+// that page.
 
 /*
  * Return the offset into page `page_nr' of the last valid
@@ -49,19 +69,35 @@ xiafs_last_byte(struct inode *inode, unsigned long page_nr)
 	return last_byte;
 }
 
+// Commit the changed directory page.
+
 static void dir_commit_chunk(struct folio *folio, loff_t pos, unsigned len)
 {
 	struct address_space *mapping = folio->mapping;
 	struct inode *dir = mapping->host;
+
+// Commit the change made to this page of memory.
+
 	block_write_end(NULL, mapping, pos, len, len, folio, NULL);
+
+// Make the directory bigger, if need be.
 
 	if (pos+len > dir->i_size) {
 		i_size_write(dir, pos+len);
 		mark_inode_dirty(dir);
 	}
+
+// Formerly, there was an if/else statement here to handle writing changes
+// immediately or not depending on whether the filesystem had been mounted
+// with `dirsync` or not. Now, though, that check is foisted off to
+// `xiafs_handle_dirsync` so we can do those checks elsewhere without repeating
+// ourselves.
+
 	/* write_on_page if (IS_DIRSYNC(dir)) moved apparently. o_O */
 	folio_unlock(folio);
 }
+
+// As mentioned above, this handles writing out the changes to the directory.
 
 /* Stealing this from fs/minix/dir.c. Directory handling generally seems to
  * have been shaken up a bit between 6.1 and 6.15 somewhere along the way.
@@ -76,6 +112,8 @@ static int xiafs_handle_dirsync(struct inode *dir)
 	return err;
 }
 
+// Once, we got pages. Now, we get folios of pages. Progress!
+
 static void *dir_get_folio(struct inode *dir, unsigned long n,
 		struct folio **foliop)
 {
@@ -87,6 +125,10 @@ static void *dir_get_folio(struct inode *dir, unsigned long n,
 	return kmap_local_folio(folio, 0);
 }
 
+// Gets the next dentry in the directory. The xiafs directory entries have
+// variable lengths, so the next extry will be `d_rec_len` bytes after the
+// current entry.
+
 static inline void *xiafs_next_entry(void *de)
 {
 	/* make this less gimpy */
@@ -94,11 +136,25 @@ static inline void *xiafs_next_entry(void *de)
 	return (void*)((char*)de + d->d_rec_len);
 }
 
+// This is where the heavy lifting of reading a directory's contents happens.
+// It's importand and specific enough that `xiafs_readdir` is the only function
+// pointer in the `xiafs_dir_operations` struct to use a xiafs-specific
+// function.
+
 static int xiafs_readdir(struct file * file, struct dir_context *ctx)
 {
 	unsigned long pos = ctx->pos;
 	struct inode *inode = file_inode(file);
+
+// The number of pages this directory is using to store its list of entries.
+
 	unsigned long npages = dir_pages(inode);
+
+// `chunk_size` is very important to the Minix filesystem, since all directory
+// entries have the same length. Xiafs has variable length directory entries,
+// but since the minimum length for a dentry is 12 this value still has some
+// use.
+
 	unsigned chunk_size = _XIAFS_DIR_SIZE; /* 1st entry is always 12, it seems. */
 	char *name;
 	unsigned char namelen;
@@ -106,32 +162,71 @@ static int xiafs_readdir(struct file * file, struct dir_context *ctx)
 	unsigned offset;
 	unsigned long n;
 
+// Set our position in the dentry list.
+
 	ctx->pos = pos = ALIGN(pos, chunk_size); /* (pos + chunk_size-1) & ~(chunk_size-1); */
+
+// Don't go off the edge.
+
 	if (pos >= inode->i_size)
 		return 0;
 
+// Calculate the starting offset from the beginning of the directory's data.
+
 	offset = pos & ~PAGE_MASK;
+
+// Calculate what page we start on.
+
 	n = pos >> PAGE_SHIFT;
+
+// Start walking through the pages of memory.
 
 	for ( ; n < npages; n++, offset = 0) {
 		char *p, *kaddr, *limit;
 		struct folio *folio;
+
+// Fill the folio and get the address of the page's data.
+
 		kaddr = dir_get_folio(inode, n, &folio);
 
 		if (IS_ERR(folio))
 			continue;
+
+// Assuming nothing went wrong, `p` will be the first dentry on the page.
+
 		p = kaddr+offset;
+
+// Subtracting `chunk_size` from `xiafs_last_byte` keeps it from marching off
+// into space.
+
 		limit = kaddr + xiafs_last_byte(inode, n) - chunk_size;
+
+// While `p` is less than the limit, get the next directory entry.
+
 		for ( ; p <= limit; p = xiafs_next_entry(p)) {
+
+// Cast `p` to be a xiafs dentry.
+
 			xiafs_dirent *de = (xiafs_dirent *)p;
+
+// A xiafs directory entry's length should never be less than 12. If it's 0,
+// then something's wrong with the filesystem.
+
 			if (de->d_rec_len == 0){
 				printk("XIAFS: Zero-length directory entry at (%s %d)\n", WHERE_ERR);
 				folio_release_kmap(folio, p);
 				return -EIO;
 			}
+
+// Otherwise, we found something.
+
 			name = de->d_name;
 			inumber = de->d_ino;
 			namelen = de->d_name_len;
+
+// If this entry has an inode number, add the entry to the list. If it doesn't
+// work, stop trying to read the directory.
+
 			if (inumber) {
 				if (!dir_emit(ctx, name, namelen, inumber, DT_UNKNOWN)){
 					folio_release_kmap(folio, p);
@@ -143,6 +238,9 @@ static int xiafs_readdir(struct file * file, struct dir_context *ctx)
 			 * xiafs has variable length directories, though, so we
 			 * want to increase the position by the length of the
 			 * directory entry rather than a fixed chunk size. */
+
+// Advance the position to the next entry.
+
 			ctx->pos += de->d_rec_len;
 		}
 		folio_release_kmap(folio, kaddr);
@@ -151,6 +249,9 @@ static int xiafs_readdir(struct file * file, struct dir_context *ctx)
 	return 0;
 }
 
+// Check if two filenames match. First, however, it checks to see if the first
+// name is shorter than the other and only compares the names if it is not.
+
 static inline int namecompare(int len, int maxlen,
 	const char * name, const char * buffer)
 {
@@ -158,6 +259,8 @@ static inline int namecompare(int len, int maxlen,
 		return 0;
 	return !memcmp(name, buffer, len);
 }
+
+// The comment here explains exactly what this function does.
 
 /*
  *	xiafs_find_entry()
@@ -169,29 +272,51 @@ static inline int namecompare(int len, int maxlen,
  */
 xiafs_dirent *xiafs_find_entry(struct dentry *dentry, struct folio **foliop, struct xiafs_direct **old_de)
 {
+
+// Set up the name, length of the name, and inode of the parent directory.
+
 	const char * name = dentry->d_name.name;
 	int namelen = dentry->d_name.len;
 	struct inode * dir = dentry->d_parent->d_inode;
 	unsigned long n;
+
+// Number of pages the directory is using for its dentry list.
+
 	unsigned long npages = dir_pages(dir);
 	char *p;
 
 	char *namx;
 	__u32 inumber;
 
+// Walk through the pages of memory.
 	for (n = 0; n < npages; n++) {
 		char *kaddr, *limit;
 		unsigned short reclen;
 		xiafs_dirent *de_pre;
 
+// Set the starting address.
+
 		kaddr = dir_get_folio(dir, n, foliop);
+
+// If fetching `n` gave an error, try the next one.
+
 		if (IS_ERR(kaddr))
 			continue;
 
+// Set the limit to loop over so we don't go off reading random memory.
 		limit = kaddr + xiafs_last_byte(dir, n) - _XIAFS_DIR_SIZE;
+
+// Cast `kaddr` to be a xiafs dentry.
 		de_pre = (xiafs_dirent *)kaddr;
 		for (p = kaddr; p <= limit; p = xiafs_next_entry(p)) {
+
+// Cast `p` to be a xiafs dentry.
+
 			xiafs_dirent *de = (xiafs_dirent *)p;
+
+// If the dentry's length is 0, something is wrong with the filesystem. Print an
+// error and bail.
+
 			if (de->d_rec_len == 0){
 				printk("XIAFS: Zero-length directory entry at (%s %d)\n", WHERE_ERR);
 				folio_release_kmap(*foliop, kaddr);
@@ -199,22 +324,43 @@ xiafs_dirent *xiafs_find_entry(struct dentry *dentry, struct folio **foliop, str
 			}
 			namx = de->d_name;
 			inumber = de->d_ino;
+
+// If the dentry has no inode, continue on.
+
 			if (!inumber)
 				continue;
 			reclen = de->d_rec_len;
+
+// If `old_de` is not a NULL pointer, set it to the address of the previous
+// dentry. If the found entry is to be deleted, the previous dentry needs to
+// have its `d_rec_len` expanded to encompass the deleted entry.
 			if(old_de)
 				*old_de = de_pre;
+
+// If the names match, we have found what we were looking for. Jump past the
+// rest of this function to the end. We jump because we don't want to release
+// the page. It could be rewritten to avoid the goto here, but eh.
+
 			if (namecompare(namelen, _XIAFS_NAME_LEN, name, namx))
 				goto found;
+
+// If they didn't match in this iteration, however, set the current dentry to be
+// the next dentry's previous dentry.
+
 			de_pre = de;
 		}
 		folio_release_kmap(*foliop, kaddr);
 	}
+
+// If it reaches this point, the desired entry was not found.
 	return NULL;
 
 found:
 	return (xiafs_dirent *)p;
 }
+
+// Add a link to an inode in a directory with the given dentry by inserting it
+// into the directory's list of dentries.
 
 int xiafs_add_link(struct dentry *dentry, struct inode *inode)
 {
