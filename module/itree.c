@@ -1,3 +1,10 @@
+// Functions for finding, fetching, and handling inode block pointers and
+// blocks. This file is the result of mashing minix's `itree_v1.c`,
+// `itree_v2.c`, and `itree_common.c` together to work with the xiafs port. The
+// handling and getting of blocks is one of the things that changed drastically
+// between 2.1.21 and 2.6.32, so the original xiafs code for this couldn't be
+// ported over hardly at all.
+
 /*
  * Porting work to modern kernels copyright (C) Jeremy Bingham, 2013.
  * Based on work by Linus Torvalds, Q. Frank Xia, and others as noted.
@@ -10,9 +17,20 @@
 #include <linux/buffer_head.h>
 #include "xiafs.h"
 
+// Indicates that eight of the block pointers are direct block pointers. A depth
+// of 3 means that xiafs block pointers go down three levels, from direct block
+// pointers, to indirect block pointers, to doubly indirect block pointers. A
+// depth of 4 would mean it had trebly indirect pointers. Having 7 direct block
+// pointers and trebly indirect block pointers would have made a lot of sense,
+// but for some reason that didn't happen with xiafs back in the day.
+
 enum {DIRECT = 8, DEPTH = 3};
 
 typedef u32 block_t;	/* 32 bit, host order */
+
+// The `block_to_cpu` and `cpu_to_block` functions cast `block_t`, defined here
+// as an unsigned 32 bit integer, back and forth to whatever the architecture
+// defines an unsigned long int to be.
 
 static inline unsigned long block_to_cpu(block_t n)
 {
@@ -24,32 +42,75 @@ static inline block_t cpu_to_block(unsigned long n)
 	return n;
 }
 
+// Returns a `block_t` pointer to the inode's data zones array.
+
 static inline block_t *i_data(struct inode *inode)
 {
 	return (block_t *)xiafs_i(inode)->i_zone;
 }
 
+// Calculate the depth in the block pointer chain a particular block is at for
+// an inode, and fill in the offsets array that will be used later to actually
+// fetch the block.
+
 static int block_to_path(struct inode * inode, long block, int offsets[DEPTH])
 {
+
+// The depth.
+
 	int n = 0;
+
+// Superblock and superblock info structs for this device.
+
 	struct super_block *sb = inode->i_sb;
 	struct xiafs_sb_info *sbi = xiafs_sb(sb);
 
+// Can't request a negative block.
 	if (block < 0) {
 		printk("XIAFS-fs: block_to_path: block %ld < 0 on dev %pg\n",
 			block, sb->s_bdev);
+
+// Also can't request a block that would create a file larger than the maximum
+// file size for the filesystem.
+
 	} else if ((u64)block * BLOCK_SIZE >= sb->s_maxbytes) {
 		return 0;
+
+// Also also can't request a block larger than the available blocks.
 	} else if (block >= (xiafs_sb(inode->i_sb)->s_max_size/sb->s_blocksize)) {
 		if (printk_ratelimit())
 			printk("XIAFS-fs: block_to_path: "
 			       "block %ld too big on dev %pg\n",
 				block, sb->s_bdev);
+
+// Now the path to the block needs to be calculated, and the steps to get there
+// placed in the offsets array.
+//
+// If the block is less than 8, it's a direct block with a depth of one. Store
+// which direct block pointer this block uses.
+
 	} else if (block < 8) {
 		offsets[n++] = block;
+// If, after subtracting 8 from the block number, the block number is less than
+// `XIAFS_ADDRS_PER_Z` (which because of the hard coded 1024 byte block is
+// always 256), then it's an indirect block. The depth is two, using the
+// indirect block pointer, and the block is the block-th block in the indirect
+// block section.
+
 	} else if ((block -= 8) < XIAFS_ADDRS_PER_Z(sbi)) {
 		offsets[n++] = 8;
 		offsets[n++] = block;
+
+// Otherwise, it's a doubly indirect block. The depth is three. To calculate
+// where the block is exactly, the block is decremented by `XIAFS_ADDRS_PER_Z`
+// (always 256). The block's value is then bitshifted right by
+// `XIAFS_ADDRS_PER_Z_BITS` (which works out to always be 13). So, the first
+// element in the offset array is set to 9, because doubly indirect blocks use
+// the last block pionter. The second element in offsets is where on the first
+// indirect block chain the second block pointer is. The third element is the
+// actual block pointer on the second part of the doubly indirect block pointer
+// chain.
+
 	} else {
 		block -= XIAFS_ADDRS_PER_Z(sbi);
 		offsets[n++] = 9;
@@ -72,19 +133,29 @@ static int block_to_path(struct inode * inode, long block, int offsets[DEPTH])
 
 /* Generic part */
 
+// Struct for holding indirect block pointers, their location, and the block
+// itself.
+
 typedef struct {
 	block_t	*p;
 	block_t	key;
 	struct buffer_head *bh;
 } Indirect;
 
+// This part starts getting kind of hairy, folks. It has an air of genuine
+// pioneer gibberish about it, but it all does something.
+
 static DEFINE_RWLOCK(pointers_lock);
+
+// Add a link to the chain to the block.
 
 static inline void add_chain(Indirect *p, struct buffer_head *bh, block_t *v)
 {
 	p->key = *(p->p = v);
 	p->bh = bh;
 }
+
+// Check that the block pointer chain is good.
 
 static inline int verify_chain(Indirect *from, Indirect *to)
 {
@@ -93,10 +164,14 @@ static inline int verify_chain(Indirect *from, Indirect *to)
 	return (from > to);
 }
 
+// Return the last block pointer for this chain.
+
 static inline block_t *block_end(struct buffer_head *bh)
 {
 	return (block_t *)((char*)bh->b_data + bh->b_size);
 }
+
+// Get a branch leading to a block.
 
 static inline Indirect *get_branch(struct inode *inode,
 					int depth,
@@ -104,39 +179,85 @@ static inline Indirect *get_branch(struct inode *inode,
 					Indirect chain[DEPTH],
 					int *err)
 {
+
+// Set up the superblock variable, a block chain pointer (no, not THAT kind of
+// blockchain), and a buffer for the block data.
+
 	struct super_block *sb = inode->i_sb;
 	Indirect *p = chain;
 	struct buffer_head *bh;
 
 	*err = 0;
 	/* i_data is not going away, no lock needed */
+
+// Make the first link in the chain.
+
 	add_chain (chain, NULL, i_data(inode) + *offsets);
+
+// If there's not a key for this part of the block chain, return what we have.
 	if (!p->key)
 		goto no_block;
+
+// Go however deep into the block chain as we need to go. If it's a direct
+// block, we don't end up having to do anything.
+
 	while (--depth) {
+
+// Read the block at this depth. If reading the block fails, goto `failure`.
+
 		bh = sb_bread(sb, block_to_cpu(p->key));
 		if (!bh)
 			goto failure;
+
+// Take a read lock on the mutex.
+
 		read_lock(&pointers_lock);
+
+// If the block chain changed out from under us, goto `changed`.
 		if (!verify_chain(chain, p))
 			goto changed;
+
+// Add a block to the block chain.
+
 		add_chain(++p, bh, (block_t *)bh->b_data + *++offsets);
+
+// Release the mutex.
+
 		read_unlock(&pointers_lock);
+
+// If there's no key for this block, goto `no_block`.
+
 		if (!p->key)
 			goto no_block;
 	}
+
+// As odd as it seems, if returning the block chain was successful this function
+// returns a null pointer.
+
 	return NULL;
+
+// If it gets here, the blocks changed from underneath us. Release the mutex and
+// buffer, set the error to `EAGAIN` so the caller knows to try again, and jump
+// to `no_block` to return what we have.
 
 changed:
 	read_unlock(&pointers_lock);
 	brelse(bh);
 	*err = -EAGAIN;
 	goto no_block;
+
+// A goto landing here means that there was a real error.
+
 failure:
 	*err = -EIO;
+
+// Return what there is in the block chain.
+
 no_block:
 	return p;
 }
+
+// Try to allocate a new block chain for a block.
 
 static int alloc_branch(struct inode *inode,
 			     int num,
@@ -145,29 +266,70 @@ static int alloc_branch(struct inode *inode,
 {
 	int n = 0;
 	int i;
+
+// Allocate the first block in the block chain to the inode.
+
 	int parent = xiafs_new_block(inode);
 
+// Store the key to the first block's location in the block chain.
+
 	branch[0].key = cpu_to_block(parent);
+
+// If the parent block was found, continue allocating blokcs as far down as
+// needed. Execution wouldn't go into the `for` loop if `num` is one, however;
+// in that case the parent is all that's needed.
+
 	if (parent) for (n = 1; n < num; n++) {
 		struct buffer_head *bh;
 		/* Allocate the next block */
 		int nr = xiafs_new_block(inode);
 		if (!nr)
 			break;
+// Set the key in this link in the block chain to the number of the new block.
+
 		branch[n].key = cpu_to_block(nr);
+
+// Read the parent blcok and lock the returned buffer.
+
 		bh = sb_getblk(inode->i_sb, parent);
 		lock_buffer(bh);
+
+// Zero out the block's data.
+
 		memset(bh->b_data, 0, bh->b_size);
+
+// Populate the rest of this link in the block chain's data.
+
 		branch[n].bh = bh;
+
+// This part looks especially confusing. The first assignment, to `branch[n].p`,
+// sets the address of the pointer. The second assignment, to `*branch[n].p`,
+// assigns the value in `branch[n].key` to the area of memory the pointer is
+// pointing to. Blugh. It's OK if it makes your head spin a little.
+
 		branch[n].p = (block_t*) bh->b_data + offsets[n];
 		*branch[n].p = branch[n].key;
+
+// Once that's all done, mark the buffer as being up to date, unlock it, and
+// mark it as being dirty so it gets written out.
+
 		set_buffer_uptodate(bh);
 		unlock_buffer(bh);
 		mark_buffer_dirty_inode(bh, inode);
+
+// The new block becomes the parent to the next block.
+
 		parent = nr;
 	}
+
+// If `n == num`, everything we tried to do was successful.
+
 	if (n == num)
 		return 0;
+
+// Otherwise, it failed somehow. It returns an error indicating there was no
+// space on the device, although there are certainly other ways (all bad) that
+// allocating a block could fail.
 
 	/* Allocation failed, free what we already allocated */
 	for (i = 1; i < n; i++)
@@ -177,6 +339,8 @@ static int alloc_branch(struct inode *inode,
 	return -ENOSPC;
 }
 
+// Splice two branches of a block chain together.
+
 static inline int splice_branch(struct inode *inode,
 				     Indirect chain[DEPTH],
 				     Indirect *where,
@@ -184,19 +348,35 @@ static inline int splice_branch(struct inode *inode,
 {
 	int i;
 
+// Take a write mutex for this portion.
+
 	write_lock(&pointers_lock);
+
+// Before doing the splice, make sure that nothing changed while we weren't
+// looking.
 
 	/* Verify that place we are splicing to is still there and vacant */
 	if (!verify_chain(chain, where-1) || *where->p)
 		goto changed;
 
+// Do the splicing here, setting the block pointer to the right value for this
+// block.
+
 	*where->p = where->key;
+
+// Release the write mutex now. As the comment below says, the atomic stuff is
+// done.
 
 	write_unlock(&pointers_lock);
 
 	/* We are done with atomic stuff, now do the rest of housekeeping */
 
+// Update the inode's `ctime`.
+
 	inode_set_ctime_current(inode);
+
+// If this was spliced on an indirect block, the buffer needs to be marked dirty
+// so the change gets written to disk.
 
 	/* had we spliced it onto indirect block? */
 	if (where->bh)
@@ -204,6 +384,8 @@ static inline int splice_branch(struct inode *inode,
 
 	mark_inode_dirty(inode);
 	return 0;
+
+// If it got changed from underneath us, free what we had and try again.
 
 changed:
 	write_unlock(&pointers_lock);
@@ -213,6 +395,8 @@ changed:
 		xiafs_free_block(inode, block_to_cpu(where[i].key));
 	return -EAGAIN;
 }
+
+// The workhorse function for getting a block.
 
 static inline int get_block(struct inode * inode, sector_t block,
 			struct buffer_head *bh, int create)
