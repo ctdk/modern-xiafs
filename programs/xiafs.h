@@ -1,3 +1,8 @@
+// The `xiafs.h` header file the programs use basically duplicates the first
+// part of the `xiafs.h` file in the kernel module. It could and probably
+// should just use that header instead, but I've never gotten around to it. See
+// that file for descriptions and explanations of everything in this file.
+
 #ifndef _XIAFS_H
 #define _XIAFS_H
 

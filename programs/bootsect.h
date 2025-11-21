@@ -1,3 +1,7 @@
+// This file is only of historical interest. Originally these definitions were
+// used for setting up a boot sector on a xiafs volume, but since that's not
+// supported anymore this is just sitting here preserved in amber for posterity.
+
 /*----------------------------------------------------------------------*
  * bootsect.h								*
  *									*
