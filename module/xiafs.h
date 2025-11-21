@@ -211,11 +211,3 @@ extern unsigned xiafs_blocks(loff_t size, struct super_block *sb);
 #endif /* __KERNEL__ */
 
 #endif  /* _XIAFS_H */
-
-
-
-
-
-
-
-
