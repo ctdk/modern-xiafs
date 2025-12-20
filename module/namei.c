@@ -119,7 +119,7 @@ static int xiafs_link(struct dentry * old_dentry, struct inode * dir,
 	return add_nondir(dentry, inode);
 }
 
-static struct dentry *xiafs_mkdir(struct mnt_idmap *idmap, struct inode * dir,
+static int xiafs_mkdir(struct mnt_idmap *idmap, struct inode * dir,
 		struct dentry *dentry, umode_t mode)
 {
 	struct inode * inode;
@@ -151,7 +151,7 @@ static struct dentry *xiafs_mkdir(struct mnt_idmap *idmap, struct inode * dir,
 
 	d_instantiate(dentry, inode);
 out:
-	return ERR_PTR(err);
+	return err;
 
 out_fail:
 	inode_dec_link_count(inode);
