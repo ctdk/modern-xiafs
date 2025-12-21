@@ -278,7 +278,7 @@ int xiafs_prepare_chunk(struct folio *folio, loff_t pos, unsigned len)
 	return __block_write_begin(folio, pos, len, xiafs_get_block);
 }
 
-static int xiafs_write_begin(struct file *file, struct address_space *mapping,
+static int xiafs_write_begin(const struct kiocb *iocb, struct address_space *mapping,
 			loff_t pos, unsigned len,
 			struct folio **foliop, void **fsdata)
 {
