@@ -12,9 +12,9 @@ Vagrant.configure(2) do |config|
 
   # Every Vagrant development environment requires a box. You can search for
   # boxes at https://atlas.hashicorp.com/search.
-  config.vm.box = "debian/bookworm64"
+  config.vm.box = "debian/trixie64"
 
-  config.vm.synced_folder '.', '/vagrant', :disabled => false
+  config.vm.synced_folder '.', '/vagrant', :disabled => false, type: "nfs", nfs_version: 4, nfs_udp: false
 
   # Disable automatic box update checking. If you disable this, then
   # boxes will only be checked for updates when the user runs
@@ -40,24 +40,23 @@ Vagrant.configure(2) do |config|
   # the path on the guest to mount the folder. And the optional third
   # argument is a set of non-required options.
   # config.vm.synced_folder "../data", "/vagrant_data"
-  config.vm.synced_folder "../linux", "/kernel-src/linux"
+  config.vm.synced_folder "../linux", "/kernel-src/linux", :disabled => false, type: "nfs", nfs_version: 4, nfs_udp: false
 
   # Provider-specific configuration so you can fine-tune various
   # backing providers for Vagrant. These expose provider-specific options.
   # Example for VirtualBox:
   #
-  file_to_disk = "./tmp/xiafs-disk.vdi"
-  kern_disk = "./tmp/kern-src-disk.vdi"
-  config.vm.provider "virtualbox" do |vb|
-    # Customize the amount of memory on the VM:
-    vb.memory = "4096"
-    if !File.exist?(file_to_disk)
-      vb.customize ['createhd', '--filename', file_to_disk, '--size', 4 * 1024]
-      vb.customize ['createhd', '--filename', kern_disk, '--size', 30 * 1024]
-      vb.customize ['storageattach', :id, '--storagectl', 'SATA Controller', '--port', 1, '--type', 'hdd', '--medium', file_to_disk]
-      vb.customize ['storageattach', :id, '--storagectl', 'SATA Controller', '--port', 2, '--type', 'hdd', '--medium', kern_disk]
-    end
+
+  config.vm.provider :libvirt do |libvirt|
+    libvirt.driver = 'kvm'
+    libvirt.uri = 'qemu:///system'
+    libvirt.storage_pool_name = 'images'
+    libvirt.memory = '4096'
+    libvirt.cpus = 2
+    libvirt.storage :file, :size => '20G'
+    libvirt.storage :file, :size => '30G'
   end
+
   #
   # View the documentation for the provider you are using for more
   # information on available options.
