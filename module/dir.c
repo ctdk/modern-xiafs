@@ -32,7 +32,7 @@ const struct file_operations xiafs_dir_operations = {
 	.llseek		= generic_file_llseek,
 	.read		= generic_read_dir,
 	.iterate_shared	= xiafs_readdir,
-	.fsync		= generic_file_fsync,
+	.fsync		= xiafs_fsync,
 };
 
 /*

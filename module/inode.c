@@ -28,10 +28,10 @@
 #include <linux/mpage.h>
 #include <linux/vfs.h>
 #include <linux/writeback.h>
+#include <linux/fs_context.h>
 
 static int xiafs_write_inode(struct inode * inode, struct writeback_control *wbc);
 static int xiafs_statfs(struct dentry *dentry, struct kstatfs *buf);
-/* static int xiafs_remount (struct super_block * sb, int * flags, char * data);*/
 
 static void xiafs_evict_inode(struct inode *inode)
 {
@@ -39,8 +39,10 @@ static void xiafs_evict_inode(struct inode *inode)
 	if (!inode->i_nlink){
 		inode->i_size = 0;
 		xiafs_truncate(inode);
+	} else {
+		mmb_sync(&xiafs_i(inode)->i_metadata_bhs);
 	}
-	invalidate_inode_buffers(inode);
+	mmb_invalidate(&xiafs_i(inode)->i_metadata_bhs);
 	clear_inode(inode);
 	if (!inode->i_nlink)
 		xiafs_free_inode(inode);
@@ -68,6 +70,7 @@ static struct inode *xiafs_alloc_inode(struct super_block *sb)
 	ei = (struct xiafs_inode_info *)kmem_cache_alloc(xiafs_inode_cachep, GFP_KERNEL);
 	if (!ei)
 		return NULL;
+	mmb_init(&ei->i_metadata_bhs, &ei->vfs_inode.i_data);
 	return &ei->vfs_inode;
 }
 
@@ -109,7 +112,7 @@ static const struct super_operations xiafs_sops = {
 	.statfs		= xiafs_statfs
 };
 
-static int xiafs_fill_super(struct super_block *s, void *data, int silent)
+static int xiafs_fill_super(struct super_block *s, struct fs_context *fc)
 {
 	struct buffer_head *bh;
 	struct buffer_head **map;
@@ -118,6 +121,7 @@ static int xiafs_fill_super(struct super_block *s, void *data, int silent)
 	struct inode *root_inode;
 	struct xiafs_sb_info *sbi;
 	int ret = -EINVAL;
+	int silent = fc->sb_flags & SB_SILENT;
 
 	sbi = kzalloc(sizeof(struct xiafs_sb_info), GFP_KERNEL);
 	if (!sbi)
@@ -347,7 +351,7 @@ struct inode *xiafs_iget(struct super_block *sb, unsigned long ino)
 
 	if (!inode)
 		return ERR_PTR(-ENOMEM);
-	if (!(inode->i_state & I_NEW))
+	if (!(inode_state_read_once(inode) & I_NEW))
 		return inode;
 	xiafs_inode = xiafs_i(inode);
 
@@ -437,7 +441,7 @@ static int xiafs_write_inode(struct inode *inode, struct writeback_control *wbc)
 	if (wbc->sync_mode == WB_SYNC_ALL && buffer_dirty(bh)) {
 		sync_dirty_buffer(bh);
 		if (buffer_req(bh) && !buffer_uptodate(bh)) {
-			printk("IO error syncing xiafs inode [%s:%08lx]\n",
+			printk("IO error syncing xiafs inode [%s:%016llx]\n",
 				inode->i_sb->s_id, inode->i_ino);
 			err = -EIO;
 		}
@@ -456,18 +460,31 @@ int xiafs_getattr(struct mnt_idmap *idmap, const struct path *path, struct kstat
 	return 0;
 }
 
-static struct dentry *xiafs_mount(struct file_system_type *fs_type,
-	int flags, const char *dev_name, void *data)
+/* A new mount API showed up in the kernel a couple of years ago in the Minix
+ * module, and it seems that some time between 6.15 and 7.1-rc6 the old API
+ * stopped working. This has forced Xiafs to get with the times.
+ */
+static int xiafs_get_tree(struct fs_context *fc) 
 {
-	return mount_bdev(fs_type, flags, dev_name, data, xiafs_fill_super);
+	return get_tree_bdev(fc, xiafs_fill_super);
+}
+
+static const struct fs_context_operations xiafs_context_ops = {
+	.get_tree = xiafs_get_tree,
+};
+
+static int xiafs_init_fs_context(struct fs_context *fc)
+{
+	fc->ops = &xiafs_context_ops;
+	return 0;
 }
 
 static struct file_system_type xiafs_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "xiafs",
-	.mount		= xiafs_mount,
 	.kill_sb	= kill_block_super,
 	.fs_flags	= FS_REQUIRES_DEV,
+	.init_fs_context = xiafs_init_fs_context,
 };
 
 static int __init init_xiafs_fs(void)

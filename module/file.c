@@ -15,8 +15,14 @@
  *  xiafs regular file handling primitives
  */
 
+#include <linux/buffer_head.h>
 #include "xiafs.h"
 #include <linux/pagemap.h>
+
+int xiafs_fsync(struct file *file, loff_t start, loff_t end, int datasync)
+{
+	return mmb_fsync(file, &xiafs_i(file->f_mapping->host)->i_metadata_bhs, start, end, datasync);
+}
 
 /*
  * We have mostly NULLs here: the current defaults are OK for
@@ -27,7 +33,7 @@ const struct file_operations xiafs_file_operations = {
 	.read_iter	= generic_file_read_iter,
 	.write_iter	= generic_file_write_iter,
 	.mmap		= generic_file_mmap,
-	.fsync		= generic_file_fsync,
+	.fsync		= xiafs_fsync,
 	.splice_read	= filemap_splice_read,
 };
 

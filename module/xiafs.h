@@ -88,6 +88,7 @@ struct xiafs_direct {
 
 struct xiafs_inode_info {               /* for data zone pointers */
     __u32  i_zone[_XIAFS_NUM_BLOCK_POINTERS];
+    struct mapping_metadata_bhs i_metadata_bhs;
     struct inode vfs_inode;
 };
 
@@ -201,6 +202,7 @@ extern const struct inode_operations xiafs_dir_inode_operations;
 extern const struct file_operations xiafs_file_operations;
 extern const struct file_operations xiafs_dir_operations;
 
+extern int xiafs_fsync(struct file *file, loff_t start, loff_t end, int datasync);
 extern int xiafs_new_block(struct inode * inode);
 extern unsigned long xiafs_count_free_blocks(struct xiafs_sb_info * sbi);
 extern void xiafs_free_block(struct inode * inode, unsigned long block);
