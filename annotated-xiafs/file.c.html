@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>file.c</title>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
+  <link rel="stylesheet" media="all" href="docco.css" />
+</head>
+<body>
+  <div id="container">
+    <div id="background"></div>
+    
+      <ul id="jump_to">
+        <li>
+          <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
+          <a class="small" href="javascript:void(0);">+</a>
+          <div id="jump_wrapper">
+          <div id="jump_page_wrapper">
+            <div id="jump_page">
+              
+                
+                <a class="source" href="bitmap.html">
+                  bitmap.c
+                </a>
+              
+                
+                <a class="source" href="dir.html">
+                  dir.c
+                </a>
+              
+                
+                <a class="source" href="file.html">
+                  file.c
+                </a>
+              
+                
+                <a class="source" href="inode.html">
+                  inode.c
+                </a>
+              
+                
+                <a class="source" href="itree.html">
+                  itree.c
+                </a>
+              
+                
+                <a class="source" href="namei.html">
+                  namei.c
+                </a>
+              
+            </div>
+          </div>
+        </li>
+      </ul>
+    
+    <ul class="sections">
+        
+          <li id="title">
+              <div class="annotation">
+                  <h1>file.c</h1>
+              </div>
+          </li>
+        
+        
+        
+        <li id="section-1">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-1">&#x00a7;</a>
+              </div>
+              
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-comment">/*
+ * Porting work to modern kernels copyright (C) Jeremy Bingham, 2013.
+ * Based on work by Linus Torvalds, Q. Frank Xia, and others as noted.
+ *
+ * This port of Q. Frank Xia&#x27;s xiafs was done using the existing minix
+ * filesystem code, but based on the original xiafs code in pre-2.1.21 or so
+ * kernels.
+ */</span>
+
+<span class="hljs-comment">/*
+ *  linux/fs/xiafs/file.c
+ *
+ *  Copyright (C) 1991, 1992 Linus Torvalds
+ *
+ *  xiafs regular file handling primitives
+ */</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;xiafs.h&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/pagemap.h&gt;</span></span>
+
+<span class="hljs-comment">/*
+ * We have mostly NULLs here: the current defaults are OK for
+ * the xiafs filesystem.
+ */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-2">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-2">&#x00a7;</a>
+              </div>
+              <p>The <code>xiafs_file_operations</code> struct is smaller than it used to be, with fewer
+function pointers. While it was once not the case, all of the file operations
+for xiafs are handled by default functions. Even in earlier versions, though,
+many of the function pointers in <code>xiafs_file_operations</code> were filled by the
+defaults.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">file_operations</span> <span class="hljs-title">xiafs_file_operations</span> =</span> {
+	.llseek		= generic_file_llseek,
+	.read_iter	= generic_file_read_iter,
+	.write_iter	= generic_file_write_iter,
+	.mmap		= generic_file_mmap,
+	.fsync		= generic_file_fsync,
+	.splice_read	= filemap_splice_read,
+};
+
+<span class="hljs-comment">/* a new setattr function is in the minix source tree. Trying to bring that in
+ * and see how it works. */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-3">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-3">&#x00a7;</a>
+              </div>
+              <p>Sets attributes on the inode. Despite the name, it is not releated to the
+file attributes listed with <code>lsattr</code> and changed with <code>chattr</code>. This handles
+changing the inode’s mode, owner, group, timestamps, and size. See
+<code>include/linux/fs.h</code> for more on this.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_setattr</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> mnt_idmap *idmap, <span class="hljs-keyword">struct</span> dentry *dentry, <span class="hljs-keyword">struct</span> iattr *attr)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">inode</span> *<span class="hljs-title">inode</span> =</span> dentry-&gt;d_inode;
+        <span class="hljs-type">int</span> error;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-4">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-4">&#x00a7;</a>
+              </div>
+              <p>Prepare to change the attributes. If something goes wrong with that, return
+an error.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+        error = setattr_prepare(&amp;nop_mnt_idmap, dentry, attr);
+        <span class="hljs-keyword">if</span> (error)
+                <span class="hljs-keyword">return</span> error;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-5">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-5">&#x00a7;</a>
+              </div>
+              <p>If the file size is to be changed, do so. Check that the size can be changed,
+then truncate the file to that size.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>        <span class="hljs-keyword">if</span> ((attr-&gt;ia_valid &amp; ATTR_SIZE) &amp;&amp;
+            attr-&gt;ia_size != i_size_read(inode)) {
+                error = inode_newsize_ok(inode, attr-&gt;ia_size);
+                <span class="hljs-keyword">if</span> (error)
+                        <span class="hljs-keyword">return</span> error;
+		truncate_setsize(inode, attr-&gt;ia_size);
+		xiafs_truncate(inode);
+        }</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-6">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-6">&#x00a7;</a>
+              </div>
+              <p>Copy the new attributes to the inode and mark the inode as dirty so it gets
+written out eventually.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+        setattr_copy(&amp;nop_mnt_idmap, inode, attr);
+        mark_inode_dirty(inode);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-7">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-7">&#x00a7;</a>
+              </div>
+              <p>Define the <code>setattr</code> and <code>getattr</code> inode operation functions for the
+<code>xiafs_file_inode_operations</code> struct.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">inode_operations</span> <span class="hljs-title">xiafs_file_inode_operations</span> =</span> {
+	.setattr 	= xiafs_setattr,</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-8">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-8">&#x00a7;</a>
+              </div>
+              <p><code>xiafs_getattr</code> lives in <code>inode.c</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	.getattr	= xiafs_getattr,
+};</pre></div></div>
+            
+        </li>
+        
+    </ul>
+  </div>
+</body>
+</html>

@@ -1,0 +1,2382 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>itree.c</title>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
+  <link rel="stylesheet" media="all" href="docco.css" />
+</head>
+<body>
+  <div id="container">
+    <div id="background"></div>
+    
+      <ul id="jump_to">
+        <li>
+          <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
+          <a class="small" href="javascript:void(0);">+</a>
+          <div id="jump_wrapper">
+          <div id="jump_page_wrapper">
+            <div id="jump_page">
+              
+                
+                <a class="source" href="bitmap.html">
+                  bitmap.c
+                </a>
+              
+                
+                <a class="source" href="dir.html">
+                  dir.c
+                </a>
+              
+                
+                <a class="source" href="file.html">
+                  file.c
+                </a>
+              
+                
+                <a class="source" href="inode.html">
+                  inode.c
+                </a>
+              
+                
+                <a class="source" href="itree.html">
+                  itree.c
+                </a>
+              
+                
+                <a class="source" href="namei.html">
+                  namei.c
+                </a>
+              
+            </div>
+          </div>
+        </li>
+      </ul>
+    
+    <ul class="sections">
+        
+          <li id="title">
+              <div class="annotation">
+                  <h1>itree.c</h1>
+              </div>
+          </li>
+        
+        
+        
+        <li id="section-1">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-1">&#x00a7;</a>
+              </div>
+              <p>Functions for finding, fetching, and handling inode block pointers and
+blocks. This file is the result of mashing minix’s <code>itree_v1.c</code>,
+<code>itree_v2.c</code>, and <code>itree_common.c</code> together to work with the xiafs port. The
+handling and getting of blocks is one of the things that changed drastically
+between 2.1.21 and 2.6.32, so the original xiafs code for this couldn’t be
+ported over hardly at all.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-comment">/*
+ * Porting work to modern kernels copyright (C) Jeremy Bingham, 2013.
+ * Based on work by Linus Torvalds, Q. Frank Xia, and others as noted.
+ *
+ * This port of Q. Frank Xia&#x27;s xiafs was done using the existing minix
+ * filesystem code, but based on the original xiafs code in pre-2.1.21 or so
+ * kernels.
+ */</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/buffer_head.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;xiafs.h&quot;</span></span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-2">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-2">&#x00a7;</a>
+              </div>
+              <p>Indicates that eight of the block pointers are direct block pointers. A depth
+of 3 means that xiafs block pointers go down three levels, from direct block
+pointers, to indirect block pointers, to doubly indirect block pointers. A
+depth of 4 would mean it had trebly indirect pointers. Having 7 direct block
+pointers and trebly indirect block pointers would have made a lot of sense,
+but for some reason that didn’t happen with xiafs back in the day.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-class"><span class="hljs-keyword">enum</span> {</span>DIRECT = <span class="hljs-number">8</span>, DEPTH = <span class="hljs-number">3</span>};
+
+<span class="hljs-keyword">typedef</span> u32 <span class="hljs-type">block_t</span>;	<span class="hljs-comment">/* 32 bit, host order */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-3">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-3">&#x00a7;</a>
+              </div>
+              <p>The <code>block_to_cpu</code> and <code>cpu_to_block</code> functions cast <code>block_t</code>, defined here
+as an unsigned 32 bit integer, back and forth to whatever the architecture
+defines an unsigned long int to be.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-title function_">block_to_cpu</span><span class="hljs-params">(<span class="hljs-type">block_t</span> n)</span>
+{
+	<span class="hljs-keyword">return</span> n;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">block_t</span> <span class="hljs-title function_">cpu_to_block</span><span class="hljs-params">(<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> n)</span>
+{
+	<span class="hljs-keyword">return</span> n;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-4">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-4">&#x00a7;</a>
+              </div>
+              <p>Returns a <code>block_t</code> pointer to the inode’s data zones array.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">block_t</span> *<span class="hljs-title function_">i_data</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode)</span>
+{
+	<span class="hljs-keyword">return</span> (<span class="hljs-type">block_t</span> *)xiafs_i(inode)-&gt;i_zone;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-5">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-5">&#x00a7;</a>
+              </div>
+              <p>Calculate the depth in the block pointer chain a particular block is at for
+an inode, and fill in the offsets array that will be used later to actually
+fetch the block.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">block_to_path</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode * inode, <span class="hljs-type">long</span> block, <span class="hljs-type">int</span> offsets[DEPTH])</span>
+{</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-6">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-6">&#x00a7;</a>
+              </div>
+              <p>The depth.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-type">int</span> n = <span class="hljs-number">0</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-7">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-7">&#x00a7;</a>
+              </div>
+              <p>Superblock and superblock info structs for this device.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">super_block</span> *<span class="hljs-title">sb</span> =</span> inode-&gt;i_sb;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_sb_info</span> *<span class="hljs-title">sbi</span> =</span> xiafs_sb(sb);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-8">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-8">&#x00a7;</a>
+              </div>
+              <p>Can’t request a negative block.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	<span class="hljs-keyword">if</span> (block &lt; <span class="hljs-number">0</span>) {
+		printk(<span class="hljs-string">&quot;XIAFS-fs: block_to_path: block %ld &lt; 0 on dev %pg\n&quot;</span>,
+			block, sb-&gt;s_bdev);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-9">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-9">&#x00a7;</a>
+              </div>
+              <p>Also can’t request a block that would create a file larger than the maximum
+file size for the filesystem.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> ((u64)block * BLOCK_SIZE &gt;= sb-&gt;s_maxbytes) {
+		<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-10">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-10">&#x00a7;</a>
+              </div>
+              <p>Also also can’t request a block larger than the available blocks.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (block &gt;= (xiafs_sb(inode-&gt;i_sb)-&gt;s_max_size/sb-&gt;s_blocksize)) {
+		<span class="hljs-keyword">if</span> (printk_ratelimit())
+			printk(<span class="hljs-string">&quot;XIAFS-fs: block_to_path: &quot;</span>
+			       <span class="hljs-string">&quot;block %ld too big on dev %pg\n&quot;</span>,
+				block, sb-&gt;s_bdev);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-11">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-11">&#x00a7;</a>
+              </div>
+              <p>Now the path to the block needs to be calculated, and the steps to get there
+placed in the offsets array.</p>
+<p>If the block is less than 8, it’s a direct block with a depth of one. Store
+which direct block pointer this block uses.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (block &lt; <span class="hljs-number">8</span>) {
+		offsets[n++] = block;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-12">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-12">&#x00a7;</a>
+              </div>
+              <p>If, after subtracting 8 from the block number, the block number is less than
+<code>XIAFS_ADDRS_PER_Z</code> (which because of the hard coded 1024 byte block is
+always 256), then it’s an indirect block. The depth is two, using the
+indirect block pointer, and the block is the block-th block in the indirect
+block section.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> ((block -= <span class="hljs-number">8</span>) &lt; XIAFS_ADDRS_PER_Z(sbi)) {
+		offsets[n++] = <span class="hljs-number">8</span>;
+		offsets[n++] = block;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-13">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-13">&#x00a7;</a>
+              </div>
+              <p>Otherwise, it’s a doubly indirect block. The depth is three. To calculate
+where the block is exactly, the block is decremented by <code>XIAFS_ADDRS_PER_Z</code>
+(always 256). The block’s value is then bitshifted right by
+<code>XIAFS_ADDRS_PER_Z_BITS</code> (which works out to always be 13). So, the first
+element in the offset array is set to 9, because doubly indirect blocks use
+the last block pionter. The second element in offsets is where on the first
+indirect block chain the second block pointer is. The third element is the
+actual block pointer on the second part of the doubly indirect block pointer
+chain.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	} <span class="hljs-keyword">else</span> {
+		block -= XIAFS_ADDRS_PER_Z(sbi);
+		offsets[n++] = <span class="hljs-number">9</span>;
+		offsets[n++] = block&gt;&gt;XIAFS_ADDRS_PER_Z_BITS(sbi);
+		offsets[n++] = block &amp; (XIAFS_ADDRS_PER_Z(sbi)<span class="hljs-number">-1</span>);
+	} 
+	<span class="hljs-keyword">return</span> n;
+}
+
+<span class="hljs-comment">/*
+ * Porting work to modern kernels copyright (C) Jeremy Bingham, 2013.
+ * Based on work by Linus Torvalds, Q. Frank Xia, and others as noted.
+ *
+ * This port of Q. Frank Xia&#x27;s xiafs was done using the existing minix
+ * filesystem code, but based on the original xiafs code in pre-2.1.21 or so
+ * kernels.
+ *
+ * This code was formerly in itree_common.c
+ */</span>
+
+<span class="hljs-comment">/* Generic part */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-14">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-14">&#x00a7;</a>
+              </div>
+              <p>Struct for holding indirect block pointers, their location, and the block
+itself.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+	<span class="hljs-type">block_t</span>	*p;
+	<span class="hljs-type">block_t</span>	key;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">buffer_head</span> *<span class="hljs-title">bh</span>;</span>
+} Indirect;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-15">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-15">&#x00a7;</a>
+              </div>
+              <p>This part starts getting kind of hairy, folks. It has an air of genuine
+pioneer gibberish about it, but it all does something.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-title function_">DEFINE_RWLOCK</span><span class="hljs-params">(pointers_lock)</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-16">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-16">&#x00a7;</a>
+              </div>
+              <p>Add a link to the chain to the block.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">add_chain</span><span class="hljs-params">(Indirect *p, <span class="hljs-keyword">struct</span> buffer_head *bh, <span class="hljs-type">block_t</span> *v)</span>
+{
+	p-&gt;key = *(p-&gt;p = v);
+	p-&gt;bh = bh;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-17">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-17">&#x00a7;</a>
+              </div>
+              <p>Check that the block pointer chain is good.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">verify_chain</span><span class="hljs-params">(Indirect *from, Indirect *to)</span>
+{
+	<span class="hljs-keyword">while</span> (from &lt;= to &amp;&amp; from-&gt;key == *from-&gt;p)
+		from++;
+	<span class="hljs-keyword">return</span> (from &gt; to);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-18">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-18">&#x00a7;</a>
+              </div>
+              <p>Return the last block pointer for this chain.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">block_t</span> *<span class="hljs-title function_">block_end</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> buffer_head *bh)</span>
+{
+	<span class="hljs-keyword">return</span> (<span class="hljs-type">block_t</span> *)((<span class="hljs-type">char</span>*)bh-&gt;b_data + bh-&gt;b_size);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-19">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-19">&#x00a7;</a>
+              </div>
+              <p>Get a branch leading to a block.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> Indirect *<span class="hljs-title function_">get_branch</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode,
+					<span class="hljs-type">int</span> depth,
+					<span class="hljs-type">int</span> *offsets,
+					Indirect chain[DEPTH],
+					<span class="hljs-type">int</span> *err)</span>
+{</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-20">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-20">&#x00a7;</a>
+              </div>
+              <p>Set up the superblock variable, a block chain pointer (no, not THAT kind of
+blockchain), and a buffer for the block data.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">super_block</span> *<span class="hljs-title">sb</span> =</span> inode-&gt;i_sb;
+	Indirect *p = chain;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">buffer_head</span> *<span class="hljs-title">bh</span>;</span>
+
+	*err = <span class="hljs-number">0</span>;
+	<span class="hljs-comment">/* i_data is not going away, no lock needed */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-21">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-21">&#x00a7;</a>
+              </div>
+              <p>Make the first link in the chain.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	add_chain (chain, <span class="hljs-literal">NULL</span>, i_data(inode) + *offsets);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-22">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-22">&#x00a7;</a>
+              </div>
+              <p>If there’s not a key for this part of the block chain, return what we have.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	<span class="hljs-keyword">if</span> (!p-&gt;key)
+		<span class="hljs-keyword">goto</span> no_block;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-23">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-23">&#x00a7;</a>
+              </div>
+              <p>Go however deep into the block chain as we need to go. If it’s a direct
+block, we don’t end up having to do anything.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">while</span> (--depth) {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-24">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-24">&#x00a7;</a>
+              </div>
+              <p>Read the block at this depth. If reading the block fails, goto <code>failure</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		bh = sb_bread(sb, block_to_cpu(p-&gt;key));
+		<span class="hljs-keyword">if</span> (!bh)
+			<span class="hljs-keyword">goto</span> failure;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-25">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-25">&#x00a7;</a>
+              </div>
+              <p>Take a read lock on the mutex.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		read_lock(&amp;pointers_lock);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-26">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-26">&#x00a7;</a>
+              </div>
+              <p>If the block chain changed out from under us, goto <code>changed</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>		<span class="hljs-keyword">if</span> (!verify_chain(chain, p))
+			<span class="hljs-keyword">goto</span> changed;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-27">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-27">&#x00a7;</a>
+              </div>
+              <p>Add a block to the block chain.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		add_chain(++p, bh, (<span class="hljs-type">block_t</span> *)bh-&gt;b_data + *++offsets);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-28">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-28">&#x00a7;</a>
+              </div>
+              <p>Release the mutex.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		read_unlock(&amp;pointers_lock);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-29">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-29">&#x00a7;</a>
+              </div>
+              <p>If there’s no key for this block, goto <code>no_block</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">if</span> (!p-&gt;key)
+			<span class="hljs-keyword">goto</span> no_block;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-30">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-30">&#x00a7;</a>
+              </div>
+              <p>As odd as it seems, if returning the block chain was successful this function
+returns a null pointer.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-31">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-31">&#x00a7;</a>
+              </div>
+              <p>If it gets here, the blocks changed from underneath us. Release the mutex and
+buffer, set the error to <code>EAGAIN</code> so the caller knows to try again, and jump
+to <code>no_block</code> to return what we have.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+changed:
+	read_unlock(&amp;pointers_lock);
+	brelse(bh);
+	*err = -EAGAIN;
+	<span class="hljs-keyword">goto</span> no_block;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-32">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-32">&#x00a7;</a>
+              </div>
+              <p>A goto landing here means that there was a real error.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+failure:
+	*err = -EIO;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-33">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-33">&#x00a7;</a>
+              </div>
+              <p>Return what there is in the block chain.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+no_block:
+	<span class="hljs-keyword">return</span> p;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-34">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-34">&#x00a7;</a>
+              </div>
+              <p>Try to allocate a new block chain for a block.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">alloc_branch</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode,
+			     <span class="hljs-type">int</span> num,
+			     <span class="hljs-type">int</span> *offsets,
+			     Indirect *branch)</span>
+{
+	<span class="hljs-type">int</span> n = <span class="hljs-number">0</span>;
+	<span class="hljs-type">int</span> i;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-35">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-35">&#x00a7;</a>
+              </div>
+              <p>Allocate the first block in the block chain to the inode.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-type">int</span> parent = xiafs_new_block(inode);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-36">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-36">&#x00a7;</a>
+              </div>
+              <p>Store the key to the first block’s location in the block chain.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	branch[<span class="hljs-number">0</span>].key = cpu_to_block(parent);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-37">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-37">&#x00a7;</a>
+              </div>
+              <p>If the parent block was found, continue allocating blokcs as far down as
+needed. Execution wouldn’t go into the <code>for</code> loop if <code>num</code> is one, however;
+in that case the parent is all that’s needed.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (parent) <span class="hljs-keyword">for</span> (n = <span class="hljs-number">1</span>; n &lt; num; n++) {
+		<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">buffer_head</span> *<span class="hljs-title">bh</span>;</span>
+		<span class="hljs-comment">/* Allocate the next block */</span>
+		<span class="hljs-type">int</span> nr = xiafs_new_block(inode);
+		<span class="hljs-keyword">if</span> (!nr)
+			<span class="hljs-keyword">break</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-38">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-38">&#x00a7;</a>
+              </div>
+              <p>Set the key in this link in the block chain to the number of the new block.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		branch[n].key = cpu_to_block(nr);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-39">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-39">&#x00a7;</a>
+              </div>
+              <p>Read the parent blcok and lock the returned buffer.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		bh = sb_getblk(inode-&gt;i_sb, parent);
+		lock_buffer(bh);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-40">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-40">&#x00a7;</a>
+              </div>
+              <p>Zero out the block’s data.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-built_in">memset</span>(bh-&gt;b_data, <span class="hljs-number">0</span>, bh-&gt;b_size);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-41">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-41">&#x00a7;</a>
+              </div>
+              <p>Populate the rest of this link in the block chain’s data.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		branch[n].bh = bh;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-42">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-42">&#x00a7;</a>
+              </div>
+              <p>This part looks especially confusing. The first assignment, to <code>branch[n].p</code>,
+sets the address of the pointer. The second assignment, to <code>*branch[n].p</code>,
+assigns the value in <code>branch[n].key</code> to the area of memory the pointer is
+pointing to. Blugh. It’s OK if it makes your head spin a little.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		branch[n].p = (<span class="hljs-type">block_t</span>*) bh-&gt;b_data + offsets[n];
+		*branch[n].p = branch[n].key;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-43">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-43">&#x00a7;</a>
+              </div>
+              <p>Once that’s all done, mark the buffer as being up to date, unlock it, and
+mark it as being dirty so it gets written out.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		set_buffer_uptodate(bh);
+		unlock_buffer(bh);
+		mark_buffer_dirty_inode(bh, inode);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-44">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-44">&#x00a7;</a>
+              </div>
+              <p>The new block becomes the parent to the next block.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		parent = nr;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-45">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-45">&#x00a7;</a>
+              </div>
+              <p>If <code>n == num</code>, everything we tried to do was successful.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (n == num)
+		<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-46">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-46">&#x00a7;</a>
+              </div>
+              <p>Otherwise, it failed somehow. It returns an error indicating there was no
+space on the device, although there are certainly other ways (all bad) that
+allocating a block could fail.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-comment">/* Allocation failed, free what we already allocated */</span>
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">1</span>; i &lt; n; i++)
+		bforget(branch[i].bh);
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; n; i++)
+		xiafs_free_block(inode, block_to_cpu(branch[i].key));
+	<span class="hljs-keyword">return</span> -ENOSPC;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-47">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-47">&#x00a7;</a>
+              </div>
+              <p>Splice two branches of a block chain together.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">splice_branch</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode,
+				     Indirect chain[DEPTH],
+				     Indirect *where,
+				     <span class="hljs-type">int</span> num)</span>
+{
+	<span class="hljs-type">int</span> i;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-48">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-48">&#x00a7;</a>
+              </div>
+              <p>Take a write mutex for this portion.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	write_lock(&amp;pointers_lock);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-49">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-49">&#x00a7;</a>
+              </div>
+              <p>Before doing the splice, make sure that nothing changed while we weren’t
+looking.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-comment">/* Verify that place we are splicing to is still there and vacant */</span>
+	<span class="hljs-keyword">if</span> (!verify_chain(chain, where<span class="hljs-number">-1</span>) || *where-&gt;p)
+		<span class="hljs-keyword">goto</span> changed;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-50">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-50">&#x00a7;</a>
+              </div>
+              <p>Do the splicing here, setting the block pointer to the right value for this
+block.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	*where-&gt;p = where-&gt;key;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-51">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-51">&#x00a7;</a>
+              </div>
+              <p>Release the write mutex now. As the comment below says, the atomic stuff is
+done.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	write_unlock(&amp;pointers_lock);
+
+	<span class="hljs-comment">/* We are done with atomic stuff, now do the rest of housekeeping */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-52">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-52">&#x00a7;</a>
+              </div>
+              <p>Update the inode’s <code>ctime</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	inode_set_ctime_current(inode);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-53">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-53">&#x00a7;</a>
+              </div>
+              <p>If this was spliced on an indirect block, the buffer needs to be marked dirty
+so the change gets written to disk.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-comment">/* had we spliced it onto indirect block? */</span>
+	<span class="hljs-keyword">if</span> (where-&gt;bh)
+		mark_buffer_dirty_inode(where-&gt;bh, inode);
+
+	mark_inode_dirty(inode);
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-54">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-54">&#x00a7;</a>
+              </div>
+              <p>If it got changed from underneath us, free what we had and try again.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+changed:
+	write_unlock(&amp;pointers_lock);
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">1</span>; i &lt; num; i++)
+		bforget(where[i].bh);
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; num; i++)
+		xiafs_free_block(inode, block_to_cpu(where[i].key));
+	<span class="hljs-keyword">return</span> -EAGAIN;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-55">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-55">&#x00a7;</a>
+              </div>
+              <p>The workhorse function for getting a block.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">get_block</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode * inode, <span class="hljs-type">sector_t</span> block,
+			<span class="hljs-keyword">struct</span> buffer_head *bh, <span class="hljs-type">int</span> create)</span>
+{
+	<span class="hljs-type">int</span> err = -EIO;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-56">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-56">&#x00a7;</a>
+              </div>
+              <p>Stores the values used to get the block we want. See <code>block_to_path</code> for how
+<code>offsets</code> is filled in.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-type">int</span> offsets[DEPTH];</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-57">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-57">&#x00a7;</a>
+              </div>
+              <p>The block chain itself.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	Indirect chain[DEPTH];</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-58">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-58">&#x00a7;</a>
+              </div>
+              <p>If there’s only a partial chain to a block, it gets put here.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	Indirect *partial;
+	<span class="hljs-type">int</span> left;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-59">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-59">&#x00a7;</a>
+              </div>
+              <p>How deep does the block reside?</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-type">int</span> depth = block_to_path(inode, block, offsets);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-60">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-60">&#x00a7;</a>
+              </div>
+              <p>A valid block must have a depth of at least one. If it doesn’t, something is
+very wrong.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (depth == <span class="hljs-number">0</span>)
+		<span class="hljs-keyword">goto</span> out;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-61">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-61">&#x00a7;</a>
+              </div>
+              <p>If goto is considered harmful, pregnant women may wish to stay away from this
+function. Execution may be sent back to this point if we need to try reading
+for the block again.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+reread:</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-62">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-62">&#x00a7;</a>
+              </div>
+              <p>Try and get the path to the block.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	partial = get_branch(inode, depth, offsets, chain, &amp;err);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-63">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-63">&#x00a7;</a>
+              </div>
+              <p>This <code>if</code> statement can be entered either because the <code>get_branch</code> call was
+successful, or from a goto further down. In either case, getting in here
+means the block was found one way or another.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-comment">/* Simplest case - block found, no allocation needed */</span>
+	<span class="hljs-keyword">if</span> (!partial) {
+got_it:</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-64">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-64">&#x00a7;</a>
+              </div>
+              <p>Set the device, block number, and block size of the buffer.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		map_bh(bh, inode-&gt;i_sb, block_to_cpu(chain[depth<span class="hljs-number">-1</span>].key));</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-65">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-65">&#x00a7;</a>
+              </div>
+              <p>Make <code>partial</code> refer to the whole block chain and jump to cleanup.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-comment">/* Clean up and exit */</span>
+		partial = chain+depth<span class="hljs-number">-1</span>; <span class="hljs-comment">/* the whole chain */</span>
+		<span class="hljs-keyword">goto</span> cleanup;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-66">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-66">&#x00a7;</a>
+              </div>
+              <p>Another confusing <code>if</code> statement. It can either be reached because of an
+error with looking up or reading a block, <em>or</em> after a successful block read
+where normal cleanup needs to happen.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-comment">/* Next simple case - plain lookup or failed read of indirect block */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-67">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-67">&#x00a7;</a>
+              </div>
+              <p>Getting in because of an error.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!create || err == -EIO) {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-68">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-68">&#x00a7;</a>
+              </div>
+              <p>Getting in as part of normal cleanup.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+cleanup:</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-69">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-69">&#x00a7;</a>
+              </div>
+              <p>Free the buffers in the block chain.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">while</span> (partial &gt; chain) {
+			brelse(partial-&gt;bh);
+			partial--;
+		}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-70">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-70">&#x00a7;</a>
+              </div>
+              <p>And return, whether this was reached because of an error calculating the path
+to the desired block or as part of the normal program execution.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+out:
+		<span class="hljs-keyword">return</span> err;
+	}
+
+	<span class="hljs-comment">/*
+	 * Indirect block might be removed by truncate while we were
+	 * reading it. Handling of that case (forget what we&#x27;ve got and
+	 * reread) is taken out of the main path.
+	 */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-71">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-71">&#x00a7;</a>
+              </div>
+              <p>Trying to read the block again, after jumping down to <code>changed</code> to free the
+buffers in the partial chain.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (err == -EAGAIN)
+		<span class="hljs-keyword">goto</span> changed;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-72">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-72">&#x00a7;</a>
+              </div>
+              <p>Allocate a new branch to the block and splice the chain together.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	left = (chain + depth) - partial;
+	err = alloc_branch(inode, left, offsets+(partial-chain), partial);
+	<span class="hljs-keyword">if</span> (err)
+		<span class="hljs-keyword">goto</span> cleanup;
+
+	<span class="hljs-keyword">if</span> (splice_branch(inode, chain, partial, left) &lt; <span class="hljs-number">0</span>)
+		<span class="hljs-keyword">goto</span> changed;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-73">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-73">&#x00a7;</a>
+              </div>
+              <p>Set the buffer as new before jumping to <code>got_it</code> and continuing on as if the
+block had been found normally and setting those settings on the buffer
+mentioned up there.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	set_buffer_new(bh);
+	<span class="hljs-keyword">goto</span> got_it;
+
+changed:</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-74">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-74">&#x00a7;</a>
+              </div>
+              <p>Free the buffers in the block chain before trying to reread the block again.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">while</span> (partial &gt; chain) {
+		brelse(partial-&gt;bh);
+		partial--;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-75">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-75">&#x00a7;</a>
+              </div>
+              <p>Jump back up to reread to try again.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">goto</span> reread;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-76">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-76">&#x00a7;</a>
+              </div>
+              <p>Is this range of block pointers all zeroed out? Returns false if any block
+pointer between <code>p</code> and <code>q</code> is not.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">all_zeroes</span><span class="hljs-params">(<span class="hljs-type">block_t</span> *p, <span class="hljs-type">block_t</span> *q)</span>
+{
+	<span class="hljs-keyword">while</span> (p &lt; q)
+		<span class="hljs-keyword">if</span> (*p++)
+			<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+	<span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-77">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-77">&#x00a7;</a>
+              </div>
+              <p>Find the shared branches in the block chains this inode is using. <code>depth</code>,
+not too surprisingly, tells us how deep we’ll need to go.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> Indirect *<span class="hljs-title function_">find_shared</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode,
+				<span class="hljs-type">int</span> depth,
+				<span class="hljs-type">int</span> offsets[DEPTH],
+				Indirect chain[DEPTH],
+				<span class="hljs-type">block_t</span> *top)</span>
+{
+	Indirect *partial, *p;
+	<span class="hljs-type">int</span> k, err;
+
+	*top = <span class="hljs-number">0</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-78">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-78">&#x00a7;</a>
+              </div>
+              <p><code>k</code> is the new <code>depth</code>. Decrement <code>k</code> while it’s greater than 1 and the
+contents of <code>offsets</code> at that level are empty. Once that’s done, that’s the
+new depth for the blocks that need to be found.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">for</span> (k = depth; k &gt; <span class="hljs-number">1</span> &amp;&amp; !offsets[k<span class="hljs-number">-1</span>]; k--)
+		;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-79">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-79">&#x00a7;</a>
+              </div>
+              <p>Get the block chain at this depth.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	partial = get_branch(inode, k, offsets, chain, &amp;err);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-80">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-80">&#x00a7;</a>
+              </div>
+              <p>Take a write mutex.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	write_lock(&amp;pointers_lock);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-81">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-81">&#x00a7;</a>
+              </div>
+              <p>If <code>partial</code> is NULL, make <code>partial</code> be the full chain offset by the depth
+(minus 1, of course). So, for example, if <code>partial</code> is NULL and we’re finding
+the shared branch at a depth of 2, <code>partial</code> is set to the full chain
+starting at the second element (1).</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!partial)
+		partial = chain + k<span class="hljs-number">-1</span>;
+	<span class="hljs-keyword">if</span> (!partial-&gt;key &amp;&amp; *partial-&gt;p) {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-82">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-82">&#x00a7;</a>
+              </div>
+              <p>Release the write mutex and goto <code>no_top</code> so whatever’s in <code>partial</code> at this
+point can be returned.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		write_unlock(&amp;pointers_lock);
+		<span class="hljs-keyword">goto</span> no_top;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-83">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-83">&#x00a7;</a>
+              </div>
+              <p>Move <code>p</code> back past any blocks that are all zeroed out.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">for</span> (p=partial;p&gt;chain &amp;&amp; all_zeroes((<span class="hljs-type">block_t</span>*)p-&gt;bh-&gt;b_data,p-&gt;p);p--)
+		;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-84">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-84">&#x00a7;</a>
+              </div>
+              <p>If <code>p</code> didn’t change at all and is not identical to the block chain pointer,
+decrement the <code>p-&gt;p</code> block pointer once.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (p == chain + k - <span class="hljs-number">1</span> &amp;&amp; p &gt; chain) {
+		p-&gt;p--;
+	} <span class="hljs-keyword">else</span> {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-85">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-85">&#x00a7;</a>
+              </div>
+              <p>Otherwise, set the <code>*top</code> block pointer to <code>p</code>‘s block pointer and set <code>p</code>‘s
+block pointer to 0. Those blocks will be freed separately from the ones in
+<code>partial</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		*top = *p-&gt;p;
+		*p-&gt;p = <span class="hljs-number">0</span>;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-86">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-86">&#x00a7;</a>
+              </div>
+              <p>Release the mutex.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	write_unlock(&amp;pointers_lock);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-87">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-87">&#x00a7;</a>
+              </div>
+              <p>Free the buffers that <code>p</code> skipped over because their blocks were zeroed out.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">while</span>(partial &gt; p)
+	{
+		brelse(partial-&gt;bh);
+		partial--;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-88">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-88">&#x00a7;</a>
+              </div>
+              <p>Return the shared branch.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+no_top:
+	<span class="hljs-keyword">return</span> partial;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-89">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-89">&#x00a7;</a>
+              </div>
+              <p>Frees the blocks on this inode between block pointers <code>*p</code> and <code>*q</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">free_data</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode, <span class="hljs-type">block_t</span> *p, <span class="hljs-type">block_t</span> *q)</span>
+{
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> nr;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-90">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-90">&#x00a7;</a>
+              </div>
+              <p>Loop over the blocks from <code>p</code> to <code>q</code>, not going past <code>q</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">for</span> ( ; p &lt; q ; p++) {
+		nr = block_to_cpu(*p);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-91">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-91">&#x00a7;</a>
+              </div>
+              <p>If this block pointer is actually pointing at anything, set said pointer to
+zero and free that block.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">if</span> (nr) {
+			*p = <span class="hljs-number">0</span>;
+			xiafs_free_block(inode, nr);
+		}
+	}
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-92">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-92">&#x00a7;</a>
+              </div>
+              <p>Free whole branches of blocks. This function recursively calls itself at each
+depth level, freeing the intermediate blocks with indirect block pointers,
+until it reaches the end of each branch, whereupon it calls <code>free_data</code> to
+actually free the data blocks.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">free_branches</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode, <span class="hljs-type">block_t</span> *p, <span class="hljs-type">block_t</span> *q, <span class="hljs-type">int</span> depth)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">buffer_head</span> * <span class="hljs-title">bh</span>;</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> nr;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-93">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-93">&#x00a7;</a>
+              </div>
+              <p>If it’s not at the end of the branch, decrement the depth by one.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (depth--) {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-94">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-94">&#x00a7;</a>
+              </div>
+              <p>Loop through the block pointers on this level.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">for</span> ( ; p &lt; q ; p++) {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-95">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-95">&#x00a7;</a>
+              </div>
+              <p>Get the block pointer. If the pointer is NULL, continue on.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			nr = block_to_cpu(*p);
+			<span class="hljs-keyword">if</span> (!nr)
+				<span class="hljs-keyword">continue</span>;
+			*p = <span class="hljs-number">0</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-96">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-96">&#x00a7;</a>
+              </div>
+              <p>Read the block. If there’s no buffer returned, continue on.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			bh = sb_bread(inode-&gt;i_sb, nr);
+			<span class="hljs-keyword">if</span> (!bh)
+				<span class="hljs-keyword">continue</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-97">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-97">&#x00a7;</a>
+              </div>
+              <p>Call <code>free_branches</code> on the block pointers in this block and release the
+buffer.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			free_branches(inode, (<span class="hljs-type">block_t</span>*)bh-&gt;b_data,
+				      block_end(bh), depth);
+			bforget(bh);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-98">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-98">&#x00a7;</a>
+              </div>
+              <p>Free this block and mark the inode as dirty.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			xiafs_free_block(inode, nr);
+			mark_inode_dirty(inode);
+		}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-99">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-99">&#x00a7;</a>
+              </div>
+              <p>Otherwise just free this blocks. No need to look further.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	} <span class="hljs-keyword">else</span>
+		free_data(inode, p, q);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-100">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-100">&#x00a7;</a>
+              </div>
+              <p>Truncate the file, nuking all the blokcs currently assigned to the inode.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">truncate</span> <span class="hljs-params">(<span class="hljs-keyword">struct</span> inode * inode)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">super_block</span> *<span class="hljs-title">sb</span> =</span> inode-&gt;i_sb;
+	<span class="hljs-type">block_t</span> *idata = i_data(inode);
+	<span class="hljs-type">int</span> offsets[DEPTH];
+	Indirect chain[DEPTH];
+	Indirect *partial;
+	<span class="hljs-type">block_t</span> nr = <span class="hljs-number">0</span>;
+	<span class="hljs-type">int</span> n;
+	<span class="hljs-type">int</span> first_whole;
+	<span class="hljs-type">long</span> iblock;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-101">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-101">&#x00a7;</a>
+              </div>
+              <p>Get the last block the inode is using.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	iblock = (inode-&gt;i_size + sb-&gt;s_blocksize <span class="hljs-number">-1</span>) &gt;&gt; sb-&gt;s_blocksize_bits;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-102">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-102">&#x00a7;</a>
+              </div>
+              <p>This is off in <code>buffer.c</code> in the kernel. That <code>get_block</code> in the arguments is
+in fact our very own <code>get_block</code> function in this file. This zeroes out the
+pages of memory the inode has.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	block_truncate_page(inode-&gt;i_mapping, inode-&gt;i_size, get_block);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-103">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-103">&#x00a7;</a>
+              </div>
+              <p>How deep is the last block?</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	n = block_to_path(inode, iblock, offsets);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-104">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-104">&#x00a7;</a>
+              </div>
+              <p>If there are no blocks, there’s nothing to truncate.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!n)
+		<span class="hljs-keyword">return</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-105">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-105">&#x00a7;</a>
+              </div>
+              <p>Nothing but direct blocks to free. Free those, then skip down to
+<code>do_indirects</code> and clear those blocks if there’s anything there.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (n == <span class="hljs-number">1</span>) {
+		free_data(inode, idata+offsets[<span class="hljs-number">0</span>], idata + DIRECT);
+		first_whole = <span class="hljs-number">0</span>;
+		<span class="hljs-keyword">goto</span> do_indirects;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-106">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-106">&#x00a7;</a>
+              </div>
+              <p>If this inode is only using direct blocks, <code>first_whole</code> is set to 0 above.
+However, if there are indirect blocks of any sort <code>first_whole</code> is set to
+the level of indirection used. If this inode is only using singly indirect
+block pointers, first_whole is set to 1. If it’s using doubly indirect block
+pointers, it’s set to 2, which means that <code>while</code> loop at <code>do_indirects</code>
+doesn’t end up being called at all. Basically, <code>first_whole</code> is to indicate
+which of the indirect block pointers don’t get cleared after this.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	first_whole = offsets[<span class="hljs-number">0</span>] + <span class="hljs-number">1</span> - DIRECT;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-107">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-107">&#x00a7;</a>
+              </div>
+              <p>Find the shared branches this inode is using for its block chains.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	partial = find_shared(inode, n, offsets, chain, &amp;nr);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-108">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-108">&#x00a7;</a>
+              </div>
+              <p>If <code>nr</code> is set, there’s some extra blocks to free outside of the partial
+chain.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (nr) {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-109">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-109">&#x00a7;</a>
+              </div>
+              <p>Mark either the inode or just that buffer as dirty, depending on whether
+those block chains are the same, and free the blocks <code>nr</code> is pointing to. If
+<code>partial</code> and <code>chain</code> are pointing to the same place, these are the only
+blocks to free.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">if</span> (partial == chain)
+			mark_inode_dirty(inode);
+		<span class="hljs-keyword">else</span>
+			mark_buffer_dirty_inode(partial-&gt;bh, inode);
+		free_branches(inode, &amp;nr, &amp;nr+<span class="hljs-number">1</span>, (chain+n<span class="hljs-number">-1</span>) - partial);
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-110">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-110">&#x00a7;</a>
+              </div>
+              <p>Now clear the blocks in <code>partial</code> out, unless it’s the same as the chain.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-comment">/* Clear the ends of indirect blocks on the shared branch */</span>
+	<span class="hljs-keyword">while</span> (partial &gt; chain) {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-111">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-111">&#x00a7;</a>
+              </div>
+              <p>Free the blocks in this branch, mark the buffer as dirty and release the
+buffer.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>		free_branches(inode, partial-&gt;p + <span class="hljs-number">1</span>, block_end(partial-&gt;bh),
+				(chain+n<span class="hljs-number">-1</span>) - partial);
+		mark_buffer_dirty_inode(partial-&gt;bh, inode);
+		brelse (partial-&gt;bh);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-112">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-112">&#x00a7;</a>
+              </div>
+              <p>Decrement the <code>partial</code> block pointer and do it agin to the next level of the
+chain.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		partial--;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-113">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-113">&#x00a7;</a>
+              </div>
+              <p>If there are any indirect block pointers remaining to be cleared, do so now.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+do_indirects:
+	<span class="hljs-comment">/* Kill the remaining (whole) subtrees */</span>
+	<span class="hljs-keyword">while</span> (first_whole &lt; DEPTH<span class="hljs-number">-1</span>) {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-114">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-114">&#x00a7;</a>
+              </div>
+              <p>Is this block pointer even set?</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		nr = idata[DIRECT+first_whole];</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-115">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-115">&#x00a7;</a>
+              </div>
+              <p>If it is, set the pointer to NULL, mark the inode as dirty and free any
+branches of the block chain associated with this block pointer.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">if</span> (nr) {
+			idata[DIRECT+first_whole] = <span class="hljs-number">0</span>;
+			mark_inode_dirty(inode);
+			free_branches(inode, &amp;nr, &amp;nr+<span class="hljs-number">1</span>, first_whole+<span class="hljs-number">1</span>);
+		}
+		first_whole++;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-116">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-116">&#x00a7;</a>
+              </div>
+              <p>Set <code>mtime</code> and <code>ctime</code> to now.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	inode_set_mtime_to_ts(inode, inode_set_ctime_current(inode));</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-117">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-117">&#x00a7;</a>
+              </div>
+              <p>Mark the inode as so, so dirty.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	mark_inode_dirty(inode);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-118">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-118">&#x00a7;</a>
+              </div>
+              <p>Count the number of blocks that would be used for a given size.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">unsigned</span> <span class="hljs-title function_">nblocks</span><span class="hljs-params">(<span class="hljs-type">loff_t</span> size, <span class="hljs-keyword">struct</span> super_block *sb)</span>
+{
+	<span class="hljs-type">int</span> k = sb-&gt;s_blocksize_bits - <span class="hljs-number">10</span>;
+	<span class="hljs-type">unsigned</span> blocks, res, direct = DIRECT, i = DEPTH;
+	blocks = (size + sb-&gt;s_blocksize - <span class="hljs-number">1</span>) &gt;&gt; (BLOCK_SIZE_BITS + k);
+	res = blocks;
+	<span class="hljs-keyword">while</span> (--i &amp;&amp; blocks &gt; direct) {
+		blocks -= direct;
+		blocks += sb-&gt;s_blocksize/<span class="hljs-keyword">sizeof</span>(<span class="hljs-type">block_t</span>) - <span class="hljs-number">1</span>;
+		blocks /= sb-&gt;s_blocksize/<span class="hljs-keyword">sizeof</span>(<span class="hljs-type">block_t</span>);
+		res += blocks;
+		direct = <span class="hljs-number">1</span>;
+	}
+	<span class="hljs-keyword">return</span> res;
+}
+
+<span class="hljs-comment">/* end former itree_common.c */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-119">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-119">&#x00a7;</a>
+              </div>
+              <p>Just a wrapper around <code>get_block</code> to use outside of this file to better fit
+with existing code.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_get_block</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode * inode, <span class="hljs-type">sector_t</span> block,
+			<span class="hljs-keyword">struct</span> buffer_head *bh_result, <span class="hljs-type">int</span> create)</span>
+{
+	<span class="hljs-keyword">return</span> get_block(inode, block, bh_result, create);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-120">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-120">&#x00a7;</a>
+              </div>
+              <p>Truncate the inode, unless it’s not a regular file.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">void</span> <span class="hljs-title function_">xiafs_truncate</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode * inode)</span>
+{
+	<span class="hljs-keyword">if</span> (!(S_ISREG(inode-&gt;i_mode) || S_ISDIR(inode-&gt;i_mode) || S_ISLNK(inode-&gt;i_mode)))
+		<span class="hljs-keyword">return</span>;
+	truncate(inode);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-121">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-121">&#x00a7;</a>
+              </div>
+              <p>Return the number of blocks for the given size.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">unsigned</span> <span class="hljs-title function_">xiafs_blocks</span><span class="hljs-params">(<span class="hljs-type">loff_t</span> size, <span class="hljs-keyword">struct</span> super_block *sb)</span>
+{
+	<span class="hljs-keyword">return</span> nblocks(size, sb);
+}</pre></div></div>
+            
+        </li>
+        
+    </ul>
+  </div>
+</body>
+</html>

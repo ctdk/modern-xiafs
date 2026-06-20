@@ -1,0 +1,2433 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>inode.c</title>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
+  <link rel="stylesheet" media="all" href="docco.css" />
+</head>
+<body>
+  <div id="container">
+    <div id="background"></div>
+    
+      <ul id="jump_to">
+        <li>
+          <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
+          <a class="small" href="javascript:void(0);">+</a>
+          <div id="jump_wrapper">
+          <div id="jump_page_wrapper">
+            <div id="jump_page">
+              
+                
+                <a class="source" href="bitmap.html">
+                  bitmap.c
+                </a>
+              
+                
+                <a class="source" href="dir.html">
+                  dir.c
+                </a>
+              
+                
+                <a class="source" href="file.html">
+                  file.c
+                </a>
+              
+                
+                <a class="source" href="inode.html">
+                  inode.c
+                </a>
+              
+                
+                <a class="source" href="itree.html">
+                  itree.c
+                </a>
+              
+                
+                <a class="source" href="namei.html">
+                  namei.c
+                </a>
+              
+            </div>
+          </div>
+        </li>
+      </ul>
+    
+    <ul class="sections">
+        
+          <li id="title">
+              <div class="annotation">
+                  <h1>inode.c</h1>
+              </div>
+          </li>
+        
+        
+        
+        <li id="section-1">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-1">&#x00a7;</a>
+              </div>
+              <p><code>inode.c</code> is the main file for this module. Everything in the other files is
+brought together here. This is where the magic happens. This file registers
+the module with the kernel and sets everything up for the kernel to be able
+to interact with xiafs, to mount the filesystems, get and work with inodes,
+and links the functionality defined in the other source files in this module
+together.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-comment">/*
+ * Porting work to modern kernels copyright (C) Jeremy Bingham, 2013.
+ * Based on work by Linus Torvalds, Q. Frank Xia, and others as noted.
+ *
+ * This port of Q. Frank Xia&#x27;s xiafs was done using the existing minix
+ * filesystem code, but based on the original xiafs code in pre-2.1.21 or so
+ * kernels.
+ */</span>
+
+<span class="hljs-comment">/*
+ *  linux/fs/xiafs/inode.c
+ *
+ *  Copyright (C) 1991, 1992  Linus Torvalds
+ *
+ *  Copyright (C) 1996  Gertjan van Wingerde
+ *	Minix V2 fs support.
+ *
+ *  Modified for 680x0 by Andreas Schwab
+ *  Updated to filesystem version 3 by Daniel Aragones
+ */</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/module.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;xiafs.h&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/buffer_head.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/slab.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/init.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/highuid.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/mpage.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/vfs.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/writeback.h&gt;</span></span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-2">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-2">&#x00a7;</a>
+              </div>
+              <p>Function definitions. I should probably get rid of that last one sometime.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_write_inode</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode * inode, <span class="hljs-keyword">struct</span> writeback_control *wbc)</span>;
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_statfs</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> dentry *dentry, <span class="hljs-keyword">struct</span> kstatfs *buf)</span>;
+<span class="hljs-comment">/* static int xiafs_remount (struct super_block * sb, int * flags, char * data);*/</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-3">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-3">&#x00a7;</a>
+              </div>
+              <p>Remove an inode.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">xiafs_evict_inode</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode)</span>
+{</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-4">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-4">&#x00a7;</a>
+              </div>
+              <p>Truncate this inode’s pages of memory.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	truncate_inode_pages(&amp;inode-&gt;i_data, <span class="hljs-number">0</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-5">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-5">&#x00a7;</a>
+              </div>
+              <p>If this inode has no links, set its size to zero and truncate its blocks on
+disk.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!inode-&gt;i_nlink){
+		inode-&gt;i_size = <span class="hljs-number">0</span>;
+		xiafs_truncate(inode);
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-6">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-6">&#x00a7;</a>
+              </div>
+              <p>As these remarkably clearly named functions indicate, invalidate all of this
+inode’s buffers and clear it.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	invalidate_inode_buffers(inode);
+	clear_inode(inode);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-7">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-7">&#x00a7;</a>
+              </div>
+              <p>At this point, if the inode has no links the inode can be freed.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!inode-&gt;i_nlink)
+		xiafs_free_inode(inode);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-8">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-8">&#x00a7;</a>
+              </div>
+              <p>Free the superblock info in memory. Release the buffers in the inode and zone
+maps in that order, then freeing the inode and zone buffer array itself,
+clear the filesystem info, and free the superblock info struct.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">xiafs_put_super</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> super_block *sb)</span>
+{
+	<span class="hljs-type">int</span> i;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_sb_info</span> *<span class="hljs-title">sbi</span> =</span> xiafs_sb(sb);
+
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; sbi-&gt;s_imap_zones; i++)
+		brelse(sbi-&gt;s_imap_buf[i]);
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; sbi-&gt;s_zmap_zones; i++)
+		brelse(sbi-&gt;s_zmap_buf[i]);
+	kfree(sbi-&gt;s_imap_buf);
+	sb-&gt;s_fs_info = <span class="hljs-literal">NULL</span>;
+	kfree(sbi);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-9">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-9">&#x00a7;</a>
+              </div>
+              <p>Define the inode cache pointer.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">kmem_cache</span> * <span class="hljs-title">xiafs_inode_cachep</span>;</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-10">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-10">&#x00a7;</a>
+              </div>
+              <p>Allocate an inode.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">struct</span> inode *<span class="hljs-title function_">xiafs_alloc_inode</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> super_block *sb)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_inode_info</span> *<span class="hljs-title">ei</span>;</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-11">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-11">&#x00a7;</a>
+              </div>
+              <p>Allocates a <code>xiafs_inode_info</code> struct (see <code>xiafs.h</code>) from the kernel memory
+cache set aside for xiafs inodes.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	ei = (<span class="hljs-keyword">struct</span> xiafs_inode_info *)kmem_cache_alloc(xiafs_inode_cachep, GFP_KERNEL);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-12">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-12">&#x00a7;</a>
+              </div>
+              <p>Of course, if somehow that inode info struct can’t be allocated return NULL.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!ei)
+		<span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-13">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-13">&#x00a7;</a>
+              </div>
+              <p>If all went well, return the VFS inode pointer address.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">return</span> &amp;ei-&gt;vfs_inode;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-14">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-14">&#x00a7;</a>
+              </div>
+              <p>Unsurprisingly this destroys an inode, removing it from the kernel inode
+cache.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">xiafs_destroy_inode</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode)</span>
+{
+	kmem_cache_free(xiafs_inode_cachep, xiafs_i(inode));
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-15">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-15">&#x00a7;</a>
+              </div>
+              <p>Used below by <code>init_inodecache</code>. Initializes an inocde once to set up the
+kmem cache for xiafs inodes.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">init_once</span><span class="hljs-params">(<span class="hljs-type">void</span> *foo)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_inode_info</span> *<span class="hljs-title">ei</span> =</span> (<span class="hljs-keyword">struct</span> xiafs_inode_info *) foo;
+
+	inode_init_once(&amp;ei-&gt;vfs_inode);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-16">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-16">&#x00a7;</a>
+              </div>
+              <p>This function creates the kmem cache for the xiafs inodes.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">init_inodecache</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	xiafs_inode_cachep = kmem_cache_create(<span class="hljs-string">&quot;xiafs_inode_cache&quot;</span>,
+					     <span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> xiafs_inode_info),
+					     <span class="hljs-number">0</span>, (SLAB_RECLAIM_ACCOUNT|
+						SLAB_ACCOUNT),
+					     init_once);
+	<span class="hljs-keyword">if</span> (xiafs_inode_cachep == <span class="hljs-literal">NULL</span>)
+		<span class="hljs-keyword">return</span> -ENOMEM;
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-17">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-17">&#x00a7;</a>
+              </div>
+              <p>Another unsurprising and clear function that does exactly what it says on the
+tin.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">destroy_inodecache</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	kmem_cache_destroy(xiafs_inode_cachep);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-18">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-18">&#x00a7;</a>
+              </div>
+              <p>Set up the function pointers for the xiafs superblock operations. The
+functions specified here control operations on inodes, freeing the
+superblock, and returning filesystem stat info.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">super_operations</span> <span class="hljs-title">xiafs_sops</span> =</span> {
+	.alloc_inode	= xiafs_alloc_inode,
+	.destroy_inode	= xiafs_destroy_inode,
+	.write_inode	= xiafs_write_inode,
+	.evict_inode	= xiafs_evict_inode,
+	.put_super	= xiafs_put_super,
+	.statfs		= xiafs_statfs
+};</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-19">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-19">&#x00a7;</a>
+              </div>
+              <p>This is one of the most important functions in xiafs. Any filesystem, in
+fact, will need a function like this one. When a xiafs filesystem is mounted,
+this function is called to read the xiafs superblock info from the device and
+populate the kernel’s superblock (which is different than the filesystem’s
+superblock), sets up the inode and block maps, and finds the root inode.</p>
+<p>One gotcha I noticed when I started working on porting xiafs originally: When
+I was first trying to get xiafs working with modern Linuxes, before I got the
+xiafs tools ported, the only way I had to get a xiafs disk to test was
+creating one in a VirtualBox VM running Slackware 3.5. The Slackware created 
+xiafs would work fine in Slackware, but not on the modern Debian I was
+building on. Later, when I got the xiafs tools working I could create xiafs
+filesystems on a modern Linux they couldn’t be mounted on the Slackware box.
+After a lot of time spent looking at hex dumps of the superblocks, I finally
+tried it out on a VM running a 32 bit Debian squeeze install, and that
+worked. It turned out that the original xiafs code did not take into account
+that the size of an int, long int, etc. might be different on different
+architectures. More specifically, it assumed it would be running in a 32 bit
+environment.</p>
+<p>Long story short, when defining structs for superblocks (and inodes), the
+hopeful filesystem hacker should be very explicit about specifying the sizes
+of the on-disk data structures.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_fill_super</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> super_block *s, <span class="hljs-type">void</span> *data, <span class="hljs-type">int</span> silent)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">buffer_head</span> *<span class="hljs-title">bh</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">buffer_head</span> **<span class="hljs-title">map</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_super_block</span> *<span class="hljs-title">xs</span>;</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> i, block;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">inode</span> *<span class="hljs-title">root_inode</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_sb_info</span> *<span class="hljs-title">sbi</span>;</span>
+	<span class="hljs-type">int</span> ret = -EINVAL;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-20">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-20">&#x00a7;</a>
+              </div>
+              <p>Allocate memory for the xiafs superblock info struct, returning ENOMEM if
+that fails.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	sbi = kzalloc(<span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> xiafs_sb_info), GFP_KERNEL);
+	<span class="hljs-keyword">if</span> (!sbi)
+		<span class="hljs-keyword">return</span> -ENOMEM;
+	s-&gt;s_fs_info = sbi;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-21">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-21">&#x00a7;</a>
+              </div>
+              <p>Freak out if <code>xiafs_inode</code> is not 64 bytes.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	BUILD_BUG_ON(<span class="hljs-number">64</span> != <span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> xiafs_inode));</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-22">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-22">&#x00a7;</a>
+              </div>
+              <p>Freak out and goto <code>out_bad_hblock</code> if we can’t set this device’s blocksize.
+This is a pretty unlikely occurance, but anything is possible.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!sb_set_blocksize(s, BLOCK_SIZE))
+		<span class="hljs-keyword">goto</span> out_bad_hblock;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-23">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-23">&#x00a7;</a>
+              </div>
+              <p>Later I figured out the reason was that Minix was reserving the entire first
+block for things like bootloaders, while xiafs only reserved the first 512
+bytes of the first block for that (in other words, the first hard disk
+sector). The xiafs superblock then fits in the second 512 byte sector of that
+first 1024 byte block.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-comment">/* Interesting. Minix had this as 1, but xiafs seems to want 0 for
+	 * some reason. */</span>
+	<span class="hljs-keyword">if</span> (!(bh = sb_bread(s, <span class="hljs-number">0</span>)))
+		<span class="hljs-keyword">goto</span> out_bad_sb;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-24">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-24">&#x00a7;</a>
+              </div>
+              <p>Set up a convenient pointer for the xiafs superblock.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	xs = (<span class="hljs-keyword">struct</span> xiafs_super_block *) bh-&gt;b_data;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-25">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-25">&#x00a7;</a>
+              </div>
+              <p>Get and test the magic number.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	s-&gt;s_magic = xs-&gt;s_magic;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-26">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-26">&#x00a7;</a>
+              </div>
+              <p>This is very sensitive to integer size. If the computer that created the
+superblock and the computer reading it have different ideas of how long a
+long integer is, and an unsigned 32 bit integer wasn’t explicitly spelled
+out, the computer reading the superblock will look in a very different and
+wrong place for the magic number. It will helpfully tell you that no magic
+number was found, which will be confusing because the magic number will be
+right there in the hex dump. Unfortunately that number should be somewhere
+else, or the kernel should be looking in the right place.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (s-&gt;s_magic != _XIAFS_SUPER_MAGIC) {
+		s-&gt;s_dev = <span class="hljs-number">0</span>;
+		ret = -EINVAL;
+		<span class="hljs-keyword">goto</span> out_no_fs;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-27">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-27">&#x00a7;</a>
+              </div>
+              <p>Copy some information from the superblock on the device to the superblock
+info struct.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	sbi-&gt;s_ninodes = xs-&gt;s_ninodes;
+	sbi-&gt;s_nzones = xs-&gt;s_nzones;
+	sbi-&gt;s_ndatazones = xs-&gt;s_ndatazones;
+	sbi-&gt;s_imap_zones = xs-&gt;s_imap_zones;
+	sbi-&gt;s_zmap_zones = xs-&gt;s_zmap_zones;
+	sbi-&gt;s_firstdatazone = xs-&gt;s_firstdatazone;
+	sbi-&gt;s_zone_shift = xs-&gt;s_zone_shift;
+	sbi-&gt;s_max_size = xs-&gt;s_max_size;
+
+
+	<span class="hljs-comment">/*
+	 * Allocate the buffer map to keep the superblock small.
+	 */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-28">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-28">&#x00a7;</a>
+              </div>
+              <p>Bail if the number of either the inode or zone map buffers is set to 0. If
+this is the case, something is very wrong with the superblock.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (sbi-&gt;s_imap_zones == <span class="hljs-number">0</span> || sbi-&gt;s_zmap_zones == <span class="hljs-number">0</span>)
+		<span class="hljs-keyword">goto</span> out_illegal_sb;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-29">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-29">&#x00a7;</a>
+              </div>
+              <p>Calculate how much space the inode and zone map buffers will take, and
+allocate that memory.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	i = (sbi-&gt;s_imap_zones + sbi-&gt;s_zmap_zones) * <span class="hljs-keyword">sizeof</span>(bh);
+	<span class="hljs-built_in">map</span> = kzalloc(i, GFP_KERNEL);
+	<span class="hljs-keyword">if</span> (!<span class="hljs-built_in">map</span>)
+		<span class="hljs-keyword">goto</span> out_no_map;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-30">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-30">&#x00a7;</a>
+              </div>
+              <p>The inode and zone map buffers are carved from the same area of memory,
+rather than allocated separately.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	sbi-&gt;s_imap_buf = &amp;<span class="hljs-built_in">map</span>[<span class="hljs-number">0</span>];
+	sbi-&gt;s_zmap_buf = &amp;<span class="hljs-built_in">map</span>[sbi-&gt;s_imap_zones];</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-31">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-31">&#x00a7;</a>
+              </div>
+              <p>Read the inode and zone maps from disk and load them into buffer arrays, one
+buffer per block. If any of the blocks fail to be read, goto <code>out_no_bitmap</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	block=<span class="hljs-number">1</span>;
+	<span class="hljs-keyword">for</span> (i=<span class="hljs-number">0</span> ; i &lt; sbi-&gt;s_imap_zones ; i++) {
+		<span class="hljs-keyword">if</span> (!(sbi-&gt;s_imap_buf[i]=sb_bread(s, block)))
+			<span class="hljs-keyword">goto</span> out_no_bitmap;
+		block++;
+	}
+	<span class="hljs-keyword">for</span> (i=<span class="hljs-number">0</span> ; i &lt; sbi-&gt;s_zmap_zones ; i++) {
+		<span class="hljs-keyword">if</span> (!(sbi-&gt;s_zmap_buf[i]=sb_bread(s, block)))
+			<span class="hljs-keyword">goto</span> out_no_bitmap;
+		block++;
+	}
+
+	<span class="hljs-comment">/* set up enough so that it can read an inode */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-32">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-32">&#x00a7;</a>
+              </div>
+              <p>Assign the superblock operations for xiafs to this superblock.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	s-&gt;s_op = &amp;xiafs_sops;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-33">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-33">&#x00a7;</a>
+              </div>
+              <p>Read the root inode, failing miserably if it’s not found.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	root_inode = xiafs_iget(s, _XIAFS_ROOT_INO);
+	<span class="hljs-keyword">if</span> (IS_ERR(root_inode)) {
+		printk(<span class="hljs-string">&quot;XIAFS: error getting root inode\n&quot;</span>);
+		ret = PTR_ERR(root_inode);
+		<span class="hljs-keyword">goto</span> out_no_root;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-34">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-34">&#x00a7;</a>
+              </div>
+              <p>We (hopefully) aren’t actually out of memory, despite what this looks like.
+This is setting a default error value to return if something <em>does</em> go wrong.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	ret = -ENOMEM;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-35">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-35">&#x00a7;</a>
+              </div>
+              <p>Instantiate the root inode, and should that fail goto <code>out_put</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	s-&gt;s_root = d_make_root(root_inode);
+	<span class="hljs-keyword">if</span> (!s-&gt;s_root)
+		<span class="hljs-keyword">goto</span> out_iput;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-36">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-36">&#x00a7;</a>
+              </div>
+              <p>If this filesystem is not being mounted read-only, mark the xiafs
+superblock’s buffer as dirty.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	<span class="hljs-keyword">if</span> (!sb_rdonly(s)) {
+		mark_buffer_dirty(bh);
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-37">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-37">&#x00a7;</a>
+              </div>
+              <p>The end of a successful superblock filling.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-38">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-38">&#x00a7;</a>
+              </div>
+              <p>Here there be error conditions, a nasty chain of goto labels that can be
+reached and entered from many points in this function. They’re generally
+pretty clear from their labels what they do.</p>
+<p>Put the root inode back, then free the map.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>out_iput:
+	iput(root_inode);
+	<span class="hljs-keyword">goto</span> out_freemap;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-39">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-39">&#x00a7;</a>
+              </div>
+              <p>This is reached if the root inode cannot be read. It prints an error message
+and then jumps down to free the map.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>out_no_root:
+	<span class="hljs-keyword">if</span> (!silent)
+		printk(<span class="hljs-string">&quot;XIAFS-fs: get root inode failed\n&quot;</span>);
+	<span class="hljs-keyword">goto</span> out_freemap;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-40">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-40">&#x00a7;</a>
+              </div>
+              <p>Prints a different informative error message, then goes directly to freeing
+the map buffers.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+out_no_bitmap:
+	printk(<span class="hljs-string">&quot;XIAFS-fs: bad superblock or unable to read bitmaps\n&quot;</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-41">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-41">&#x00a7;</a>
+              </div>
+              <p>Free the inode and zone map buffers if something went wrong after they were
+allocated. Then, jump past the next three labels and continue on.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+out_freemap:
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; sbi-&gt;s_imap_zones; i++)
+		brelse(sbi-&gt;s_imap_buf[i]);
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; sbi-&gt;s_zmap_zones; i++)
+		brelse(sbi-&gt;s_zmap_buf[i]);
+	kfree(sbi-&gt;s_imap_buf);
+	<span class="hljs-keyword">goto</span> out_release;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-42">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-42">&#x00a7;</a>
+              </div>
+              <p>As the error message and label say, if this is reached the inode and zone map
+could not be allocated.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+out_no_map:
+	ret = -ENOMEM;
+	<span class="hljs-keyword">if</span> (!silent)
+		printk(<span class="hljs-string">&quot;XIAFS-fs: can&#x27;t allocate map\n&quot;</span>);
+	<span class="hljs-keyword">goto</span> out_release;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-43">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-43">&#x00a7;</a>
+              </div>
+              <p>The superblock was bad, because either or both the number of inode and zone
+map blocks was 0.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+out_illegal_sb:
+	<span class="hljs-keyword">if</span> (!silent)
+		printk(<span class="hljs-string">&quot;XIAFS-fs: bad superblock\n&quot;</span>);
+	<span class="hljs-keyword">goto</span> out_release;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-44">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-44">&#x00a7;</a>
+              </div>
+              <p>The kernel can’t tell that this is a xiafs filesystem because it did not read
+the correct superblock.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+out_no_fs:
+	<span class="hljs-keyword">if</span> (!silent)
+		printk(<span class="hljs-string">&quot;VFS: Can&#x27;t find a Xiafs filesystem &quot;</span>
+		       <span class="hljs-string">&quot;on device %s.\n&quot;</span>, s-&gt;s_id);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-45">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-45">&#x00a7;</a>
+              </div>
+              <p>Cleanup goto labels.</p>
+<p>Release the superblock buffer.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+out_release:
+	brelse(bh);
+	<span class="hljs-keyword">goto</span> out;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-46">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-46">&#x00a7;</a>
+              </div>
+              <p>This condition can only happen if the kernel’s defined <code>BLOCK_SIZE</code> is
+somehow incompatible with the device holding the filesystem.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+out_bad_hblock:
+	printk(<span class="hljs-string">&quot;XIAFS-fs: blocksize too small for device\n&quot;</span>);
+	<span class="hljs-keyword">goto</span> out;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-47">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-47">&#x00a7;</a>
+              </div>
+              <p>Couldn’t read the xiafs superblock from the disk. This could be because the
+superblock is bad, the filesystem is extremely messed up, or the disk could
+be failing.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+out_bad_sb:
+	printk(<span class="hljs-string">&quot;XIAFS-fs: unable to read superblock\n&quot;</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-48">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-48">&#x00a7;</a>
+              </div>
+              <p>The final error condition goto lable. Set the superblock’s filesystem info
+filed to NULL, free the xiafs superblock info struct, and return whatever
+error’s been set.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+out:
+	s-&gt;s_fs_info = <span class="hljs-literal">NULL</span>;
+	kfree(sbi);
+	<span class="hljs-keyword">return</span> ret;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-49">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-49">&#x00a7;</a>
+              </div>
+              <p>Sets the provided <code>kstatfs</code> buffer up with loads of information about this
+volume.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_statfs</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> dentry *dentry, <span class="hljs-keyword">struct</span> kstatfs *buf)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">super_block</span> *<span class="hljs-title">sb</span> =</span> dentry-&gt;d_sb;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_sb_info</span> *<span class="hljs-title">sbi</span> =</span> xiafs_sb(sb);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-50">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-50">&#x00a7;</a>
+              </div>
+              <p>Encode the major and minor device numbers of the device this filesystem
+resides on as an unsigned 64 bit integer.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	u64 id = huge_encode_dev(sb-&gt;s_bdev-&gt;bd_dev);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-51">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-51">&#x00a7;</a>
+              </div>
+              <p>Set <code>f_type</code> to xiafs’ magic number so <code>statfs</code> knows what type of filesystem
+this is.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	buf-&gt;f_type = sb-&gt;s_magic;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-52">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-52">&#x00a7;</a>
+              </div>
+              <p>Information about blocks: their size, how many there are, how many are free.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	buf-&gt;f_bsize = sb-&gt;s_blocksize;
+	buf-&gt;f_blocks = sbi-&gt;s_ndatazones;
+	buf-&gt;f_bfree = xiafs_count_free_blocks(sbi);
+	buf-&gt;f_bavail = buf-&gt;f_bfree;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-53">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-53">&#x00a7;</a>
+              </div>
+              <p>How many files this filesystem can have in total is determined by the number
+of inodes on the filesystem. It is entirely possible for many filesystems,
+including this one, to have free space on the device but be unable to add
+more files because all of the inodes have been used up.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	buf-&gt;f_files = sbi-&gt;s_ninodes;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-54">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-54">&#x00a7;</a>
+              </div>
+              <p>The number of inodes remaining free is the maximum number of files that can
+be added to this filesystem, not taking into account any issues with the
+number of free blocks.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	buf-&gt;f_ffree = xiafs_count_free_inodes(sbi);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-55">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-55">&#x00a7;</a>
+              </div>
+              <p>How long can a filename be?</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	buf-&gt;f_namelen = _XIAFS_NAME_LEN;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-56">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-56">&#x00a7;</a>
+              </div>
+              <p>That encoded device number from above, along with that same number bitshifted
+by 32, is put into the somewhat mysterious <code>f_fsid</code> struct. (Seriously - look
+at the <code>statfs(2)</code> man page.)</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	buf-&gt;f_fsid.val[<span class="hljs-number">0</span>] = (u32)id;
+	buf-&gt;f_fsid.val[<span class="hljs-number">1</span>] = (u32)(id &gt;&gt; <span class="hljs-number">32</span>);
+
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-57">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-57">&#x00a7;</a>
+              </div>
+              <p>These next three functions are just wrappers around generic kernel functions
+for writing and reading pages of memory.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_writepages</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> address_space *mapping, <span class="hljs-keyword">struct</span> writeback_control *wbc)</span>
+{
+	<span class="hljs-keyword">return</span> mpage_writepages(mapping, wbc, xiafs_get_block);
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_read_folio</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file *file, <span class="hljs-keyword">struct</span> folio *folio)</span>
+{
+	<span class="hljs-keyword">return</span> block_read_full_folio(folio, xiafs_get_block);
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_prepare_chunk</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> folio *folio, <span class="hljs-type">loff_t</span> pos, <span class="hljs-type">unsigned</span> len)</span>
+{
+	<span class="hljs-keyword">return</span> __block_write_begin(folio, pos, len, xiafs_get_block);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-58">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-58">&#x00a7;</a>
+              </div>
+              <p>This is mostly a wrapper around a generic functino for beginning to write to
+a page of memory, with additional logic to handle truncating the file if need
+be.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_write_begin</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file *file, <span class="hljs-keyword">struct</span> address_space *mapping,
+			<span class="hljs-type">loff_t</span> pos, <span class="hljs-type">unsigned</span> len,
+			<span class="hljs-keyword">struct</span> folio **foliop, <span class="hljs-type">void</span> **fsdata)</span>
+{
+	<span class="hljs-type">int</span> ret;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-59">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-59">&#x00a7;</a>
+              </div>
+              <p>If this returns something, something went wrong with allocating the blocks.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	ret = block_write_begin(mapping, pos, len, foliop, 
+				xiafs_get_block);
+
+	<span class="hljs-keyword">if</span> (unlikely(ret)){
+		<span class="hljs-type">loff_t</span> isize = mapping-&gt;host-&gt;i_size;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-60">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-60">&#x00a7;</a>
+              </div>
+              <p>Unmap the page cache and truncate the file if the position and length of the
+data we were trying to write is past the end of the file’s size.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">if</span> (pos + len &gt; isize){
+			truncate_pagecache(mapping-&gt;host, isize);
+			xiafs_truncate(mapping-&gt;host);
+		}
+	}
+	<span class="hljs-keyword">return</span> ret;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-61">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-61">&#x00a7;</a>
+              </div>
+              <p>Another wrapper around a generic kernel function. This gets the block on disk
+that corresponds to the number requested with <code>sector_t block</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">sector_t</span> <span class="hljs-title function_">xiafs_bmap</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> address_space *mapping, <span class="hljs-type">sector_t</span> block)</span>
+{
+	<span class="hljs-keyword">return</span> generic_block_bmap(mapping,block,xiafs_get_block);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-62">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-62">&#x00a7;</a>
+              </div>
+              <p>Define function pointers for xiafs’ address space operations. This has grown
+and changed quite a bit since this was last annotated for kernel version
+3.12.1.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">address_space_operations</span> <span class="hljs-title">xiafs_aops</span> =</span> {
+	.dirty_folio	= block_dirty_folio,
+	.invalidate_folio = block_invalidate_folio,
+	.read_folio = xiafs_read_folio,
+	.writepages = xiafs_writepages,
+	.write_begin = xiafs_write_begin,
+	.write_end = generic_write_end,
+	.migrate_folio = buffer_migrate_folio,
+	.bmap = xiafs_bmap,
+	.direct_IO = noop_direct_IO
+};</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-63">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-63">&#x00a7;</a>
+              </div>
+              <p>Define function pointers for xiafs’ symlink operations. <code>get_link</code> uses a
+generic function, while <code>getattr</code> uses a xiafs specific function
+(<code>xiafs_getattr</code>).</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">inode_operations</span> <span class="hljs-title">xiafs_symlink_inode_operations</span> =</span> {
+	.get_link	= page_get_link,
+	.getattr	= xiafs_getattr,
+};</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-64">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-64">&#x00a7;</a>
+              </div>
+              <p>Set inode operations, depending on what kind of file the inode is. All inodes
+that are regular files, directories, or symlinks get the same address
+operations.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">void</span> <span class="hljs-title function_">xiafs_set_inode</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode, <span class="hljs-type">dev_t</span> rdev)</span>
+{</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-65">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-65">&#x00a7;</a>
+              </div>
+              <p>If it’s a regular file, it gets the file operations. See <code>file.c</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (S_ISREG(inode-&gt;i_mode)) {
+		inode-&gt;i_op = &amp;xiafs_file_inode_operations;
+		inode-&gt;i_fop = &amp;xiafs_file_operations;
+		inode-&gt;i_mapping-&gt;a_ops = &amp;xiafs_aops;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-66">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-66">&#x00a7;</a>
+              </div>
+              <p>If it’s a directory, it gets the directory operations. See <code>dir.c</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (S_ISDIR(inode-&gt;i_mode)) {
+		inode-&gt;i_op = &amp;xiafs_dir_inode_operations;
+		inode-&gt;i_fop = &amp;xiafs_dir_operations;
+		inode-&gt;i_mapping-&gt;a_ops = &amp;xiafs_aops;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-67">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-67">&#x00a7;</a>
+              </div>
+              <p>If it’s a symlink, it gets a rather smaller set of operations just for
+symlinks. The symlink inode operations are defined right above this function.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (S_ISLNK(inode-&gt;i_mode)) {
+		inode-&gt;i_op = &amp;xiafs_symlink_inode_operations;
+		inode_nohighmem(inode);
+		inode-&gt;i_mapping-&gt;a_ops = &amp;xiafs_aops;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-68">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-68">&#x00a7;</a>
+              </div>
+              <p>Otherwise, initialize the inode with the default operations for its type.
+This applies to device files, FIFOs, and sockets.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	} <span class="hljs-keyword">else</span>
+		init_special_inode(inode, inode-&gt;i_mode, rdev);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-69">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-69">&#x00a7;</a>
+              </div>
+              <p>Get an inode with the given inode number.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-keyword">struct</span> inode *<span class="hljs-title function_">xiafs_iget</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> super_block *sb, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> ino)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">inode</span> *<span class="hljs-title">inode</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">buffer_head</span> * <span class="hljs-title">bh</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_inode</span> * <span class="hljs-title">raw_inode</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_inode_info</span> *<span class="hljs-title">xiafs_inode</span>;</span>
+	<span class="hljs-type">int</span> zone;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-70">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-70">&#x00a7;</a>
+              </div>
+              <p>Get, or allocate if needed, the inode, and lock it to prevent outside
+changes.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	inode = iget_locked(sb, ino);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-71">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-71">&#x00a7;</a>
+              </div>
+              <p>Return <code>ENOMEM</code> if no inode was returned.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!inode)
+		<span class="hljs-keyword">return</span> ERR_PTR(-ENOMEM);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-72">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-72">&#x00a7;</a>
+              </div>
+              <p>If the inode was returned and it’s not newly allocated, go ahead and return
+it.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!(inode-&gt;i_state &amp; I_NEW))
+		<span class="hljs-keyword">return</span> inode;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-73">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-73">&#x00a7;</a>
+              </div>
+              <p>Otherwise, set this inode ujp. First, get the <code>xiafs_inode</code> info.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	xiafs_inode = xiafs_i(inode);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-74">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-74">&#x00a7;</a>
+              </div>
+              <p>Get the raw inode from disk. If that failed, return an IO error.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	raw_inode = xiafs_raw_inode(inode-&gt;i_sb, inode-&gt;i_ino, &amp;bh);
+	<span class="hljs-keyword">if</span> (!raw_inode) {
+		iget_failed(inode);
+		<span class="hljs-keyword">return</span> ERR_PTR(-EIO);
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-75">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-75">&#x00a7;</a>
+              </div>
+              <p>Copy the raw inode’s inforation to the inode in memory.</p>
+
+            </div>
+            
+        </li>
+        
+        
+        <li id="section-76">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-76">&#x00a7;</a>
+              </div>
+              <p>File mode.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	inode-&gt;i_mode = raw_inode-&gt;i_mode;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-77">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-77">&#x00a7;</a>
+              </div>
+              <p>Rather than a set of explicit casts of <code>raw_inode</code>‘s <code>i_uid</code> and <code>i_gid</code> to
+<code>uid_t</code> and <code>gid_t</code> here and setting <code>inode-&gt;i_gid</code> and <code>inode-&gt;i_gid</code>
+directly, like it used to be, setting the UID and GID of the inode is foisted
+off to a set of functions that do everything for us.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	i_uid_write(inode, raw_inode-&gt;i_uid);
+	i_gid_write(inode, raw_inode-&gt;i_gid);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-78">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-78">&#x00a7;</a>
+              </div>
+              <p>Setting the number of links is an atomic operation, so it’s done in a
+separate function.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	set_nlink(inode, raw_inode-&gt;i_nlinks);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-79">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-79">&#x00a7;</a>
+              </div>
+              <p>No gotchas with setting <code>i_size</code> at least.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	inode-&gt;i_size = raw_inode-&gt;i_size;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-80">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-80">&#x00a7;</a>
+              </div>
+              <p>Here is some computer archeology, preserved in amber/mudstone/petrified glop
+or whatever you’d prefer. Xiafs long predates the notion of storing anything
+other than seconds in the inode timestamp fields. Previously, when setting
+the inode’s timestamps we needed to set the <code>tv_sec</code> field of the timestamp
+structs to the appropriate timestamp value and set <code>tv_nsec</code> (for nanosecond
+resolution) to 0, since the filesystem simply doesn’t store that level of
+granularity. This code is commented out, though, because it doesn’t work like
+that anymore.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-comment">/*
+	inode-&gt;i_mtime.tv_sec = raw_inode-&gt;i_mtime;
+	inode-&gt;i_atime.tv_sec = raw_inode-&gt;i_atime;
+	inode-&gt;i_ctime.tv_sec = raw_inode-&gt;i_ctime;
+	inode-&gt;i_mtime.tv_nsec = 0;
+	inode-&gt;i_atime.tv_nsec = 0;
+	inode-&gt;i_ctime.tv_nsec = 0;
+	*/</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-81">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-81">&#x00a7;</a>
+              </div>
+              <p>Now, the timestamps are set by a chain of function calls. It’s more opaque,
+but the timestamp handling is more consistent.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	inode_set_mtime_to_ts(inode, inode_set_atime_to_ts(inode, inode_set_ctime(inode, raw_inode-&gt;i_ctime, <span class="hljs-number">0</span>)));</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-82">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-82">&#x00a7;</a>
+              </div>
+              <p>If this inode is a character or block device, set its number of blocks to 0
+and set the device number to the value stored in the first block pointer.
+This does raise the question of <em>why</em> there is a character or block device
+on a xiafs filesystem in this day and age, but it’s still necessary to take
+the possibility into account.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (S_ISCHR(inode-&gt;i_mode) || S_ISBLK(inode-&gt;i_mode)) {
+		inode-&gt;i_blocks=<span class="hljs-number">0</span>;
+		inode-&gt;i_rdev = old_decode_dev(raw_inode-&gt;i_zone[<span class="hljs-number">0</span>]);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-83">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-83">&#x00a7;</a>
+              </div>
+              <p>If it’s not a device, set <code>i_blocks</code> with the values of the topmost bit of
+the first three block pointers. See <code>XIAFS_GET_BLOCKS</code> in <code>xiafs.h</code> for a
+more in-depth explanation.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	} <span class="hljs-keyword">else</span> {
+		XIAFS_GET_BLOCKS(raw_inode, inode-&gt;i_blocks);
+		<span class="hljs-comment">/* Changing this to put the former i_ind and i_dind_zone inode
+		 * elements into the same array as the direct blocks, per the
+		 * way it works with minix and ext2. Hopefully it will simplify
+		 * using the block allocation code lifted from the minix code.
+		 */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-84">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-84">&#x00a7;</a>
+              </div>
+              <p>Copy the block pointers, skipping the topmost byte of each pointer.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">for</span> (zone = <span class="hljs-number">0</span>; zone &lt; _XIAFS_NUM_BLOCK_POINTERS; zone++)
+		    	xiafs_inode-&gt;i_zone[zone] = raw_inode-&gt;i_zone[zone] &amp; <span class="hljs-number">0xffffff</span>;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-85">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-85">&#x00a7;</a>
+              </div>
+              <p>Set the inode’s operations.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	xiafs_set_inode(inode, old_decode_dev(raw_inode-&gt;i_zone[<span class="hljs-number">0</span>]));</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-86">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-86">&#x00a7;</a>
+              </div>
+              <p>Release the buffer.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	brelse(bh);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-87">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-87">&#x00a7;</a>
+              </div>
+              <p>Unlock the inode and return it.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	unlock_new_inode(inode);
+	<span class="hljs-keyword">return</span> inode;
+}
+
+<span class="hljs-comment">/*
+ * The xiafs function to synchronize an inode.
+ */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-88">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-88">&#x00a7;</a>
+              </div>
+              <p>This function is complementary to the previous one. While <code>xiafs_iget</code> gets
+an inode, filling it with the data from the raw xiafs inode on disk if need
+be, <code>xiafs_update_inode</code> fills in all the data for the raw inode and marks it
+to be written to disk.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">struct</span> buffer_head * <span class="hljs-title function_">xiafs_update_inode</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode * inode)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">buffer_head</span> * <span class="hljs-title">bh</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_inode</span> * <span class="hljs-title">raw_inode</span>;</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-89">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-89">&#x00a7;</a>
+              </div>
+              <p>Get the xiafs inode info for this inode.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_inode_info</span> *<span class="hljs-title">xiafs_inode</span> =</span> xiafs_i(inode);
+	<span class="hljs-type">int</span> i;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-90">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-90">&#x00a7;</a>
+              </div>
+              <p>Get the raw inode. If this fails, return NULL.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	raw_inode = xiafs_raw_inode(inode-&gt;i_sb, inode-&gt;i_ino, &amp;bh);
+	<span class="hljs-keyword">if</span> (!raw_inode)
+		<span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-91">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-91">&#x00a7;</a>
+              </div>
+              <p>The file’s mode (type and permissions).</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	raw_inode-&gt;i_mode = inode-&gt;i_mode;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-92">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-92">&#x00a7;</a>
+              </div>
+              <p>As above, the uid and gid in the inode in memory must be cast to unsigned 16
+bit integers to fit properly in the xiafs inode.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	raw_inode-&gt;i_uid = fs_high2lowuid(i_uid_read(inode));
+	raw_inode-&gt;i_gid = fs_high2lowgid(i_gid_read(inode));</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-93">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-93">&#x00a7;</a>
+              </div>
+              <p>Number of links to this file, and the size in bytes.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	raw_inode-&gt;i_nlinks = inode-&gt;i_nlink;
+	raw_inode-&gt;i_size = inode-&gt;i_size;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-94">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-94">&#x00a7;</a>
+              </div>
+              <p>Xiafs’ timestamps only store time to the second, so we only use the <code>*_sec</code>
+timestamp fields from the inode. Any nanosecond time data that’s been stored
+along the way is discarded.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	raw_inode-&gt;i_mtime = inode-&gt;i_mtime_sec;
+	raw_inode-&gt;i_atime = inode-&gt;i_atime_sec;
+	raw_inode-&gt;i_ctime = inode-&gt;i_ctime_sec;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-95">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-95">&#x00a7;</a>
+              </div>
+              <p>If this is a character or block device (for some reason), store the device
+number in the first block pointer.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (S_ISCHR(inode-&gt;i_mode) || S_ISBLK(inode-&gt;i_mode))
+		raw_inode-&gt;i_zone[<span class="hljs-number">0</span>] = old_encode_dev(inode-&gt;i_rdev);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-96">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-96">&#x00a7;</a>
+              </div>
+              <p>Otherwise, do the opposite of the crazy thing with storing the <code>i_blocks</code>
+value in the topmost bit of the first three block pointers. See
+<code>XIAFS_PUT_BLOCKS</code> in <code>xiafs.h</code> for more.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">else</span> { 
+		XIAFS_PUT_BLOCKS(raw_inode, inode-&gt;i_blocks);
+		<span class="hljs-comment">/* Changing this to put the former i_ind and i_dind_zone inode
+		 * elements into the same array as the direct blocks, per the
+		 * way it works with minix and ext2. Hopefully it will simplify
+		 * using the block allocation code lifted from the minix code.
+		 */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-97">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-97">&#x00a7;</a>
+              </div>
+              <p>Store the block pointers. The complicated looking bit manipulation is to
+preserve the <code>i_blocks</code> info stored in the topmost bit of the first three
+block pointers – by ORing the result of ANDing the raw inode block pointer
+with 0xff000000 (which was set with <code>XIAFS_PUT_BLOCKS</code>) with ANDign the block
+pointer from the xiafs inode info struct with 0xffffff, both the byte of the
+<code>i_blocks</code> value that may be stored in that block pointer and the actual
+block pointer value used for finding blocks are preserved.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; _XIAFS_NUM_BLOCK_POINTERS; i++)
+			raw_inode-&gt;i_zone[i] = (raw_inode-&gt;i_zone[i] &amp; <span class="hljs-number">0xff000000</span>) | (xiafs_inode-&gt;i_zone[i] &amp; <span class="hljs-number">0xffffff</span>);
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-98">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-98">&#x00a7;</a>
+              </div>
+              <p>Mark the buffer as dirty so it will be written out, and return the buffer.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	mark_buffer_dirty(bh);
+	<span class="hljs-keyword">return</span> bh;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-99">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-99">&#x00a7;</a>
+              </div>
+              <p>Mostly this function just calls <code>xiafs_update_inode</code>, but it does add some
+housekeeping in case something goes wrong.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_write_inode</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode, <span class="hljs-keyword">struct</span> writeback_control *wbc)</span>
+{
+	<span class="hljs-type">int</span> err = <span class="hljs-number">0</span>;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">buffer_head</span> *<span class="hljs-title">bh</span>;</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-100">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-100">&#x00a7;</a>
+              </div>
+              <p>Update the inode, oddly enough.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	bh = xiafs_update_inode(inode);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-101">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-101">&#x00a7;</a>
+              </div>
+              <p>If no buffer was returned, return an IO error.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!bh)
+		<span class="hljs-keyword">return</span> -EIO;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-102">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-102">&#x00a7;</a>
+              </div>
+              <p>If the writeback sync mode is set to WB_SYNC_ALL and the buffer is dirty
+(and the buffer probably ought to be dirty, since it was <em>just</em> marked as
+such in xiafs_update_inode), then the buffer must be synced now before
+moving on.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (wbc-&gt;sync_mode == WB_SYNC_ALL &amp;&amp; buffer_dirty(bh)) {
+		sync_dirty_buffer(bh);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-103">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-103">&#x00a7;</a>
+              </div>
+              <p>If something went wrong with syncing said buffer, print an error message and
+return an IO error.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">if</span> (buffer_req(bh) &amp;&amp; !buffer_uptodate(bh)) {
+			printk(<span class="hljs-string">&quot;IO error syncing xiafs inode [%s:%08lx]\n&quot;</span>,
+				inode-&gt;i_sb-&gt;s_id, inode-&gt;i_ino);
+			err = -EIO;
+		}
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-104">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-104">&#x00a7;</a>
+              </div>
+              <p>Release the buffer.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	brelse (bh);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-105">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-105">&#x00a7;</a>
+              </div>
+              <p>Return 0 on success, or an IO error if syncing the buffer failed.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">return</span> err;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-106">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-106">&#x00a7;</a>
+              </div>
+              <p>Gets attributes for the inode. Like <code>xiafs_setattr</code>, this has nothing to do
+with file attributes used with tools like lsattr and chattr, but rather these
+attributes are things like the device it resides on, the inode number, the
+mode, number of links, etc. See <code>generic_fillattr</code> in <code>fs/stat.c</code> for the
+full rundown of what it does.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_getattr</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> mnt_idmap *idmap, <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> path *path, <span class="hljs-keyword">struct</span> kstat *stat, u32 request_mask, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> flags)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">super_block</span> *<span class="hljs-title">sb</span> =</span> path-&gt;dentry-&gt;d_sb;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">inode</span> *<span class="hljs-title">inode</span> =</span> d_inode(path-&gt;dentry);
+	generic_fillattr(&amp;nop_mnt_idmap, request_mask, inode, stat);
+	stat-&gt;blocks = (sb-&gt;s_blocksize / <span class="hljs-number">512</span>) * xiafs_blocks(stat-&gt;size, sb);
+	stat-&gt;blksize = sb-&gt;s_blocksize;
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-107">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-107">&#x00a7;</a>
+              </div>
+              <p>Mount this puppy. Calls the generic <code>mount_bdev</code> function to do a lot of it,
+but does pass in <code>xiafs_fill_super</code> to do the xiafs specific work.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">struct</span> dentry *<span class="hljs-title function_">xiafs_mount</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file_system_type *fs_type,
+	<span class="hljs-type">int</span> flags, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *dev_name, <span class="hljs-type">void</span> *data)</span>
+{
+	<span class="hljs-keyword">return</span> mount_bdev(fs_type, flags, dev_name, data, xiafs_fill_super);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-108">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-108">&#x00a7;</a>
+              </div>
+              <p>The filesystem type struct for xiafs. Specifies which module owns the
+filesystem (namely this one, assuming xiafs is loaded as a module), its name,
+the functions to call when mounting and unmounting, and that this filesystem
+is not a virtual filesystem and must be backed by a “real” device.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">file_system_type</span> <span class="hljs-title">xiafs_fs_type</span> =</span> {
+	.owner		= THIS_MODULE,
+	.name		= <span class="hljs-string">&quot;xiafs&quot;</span>,
+	.mount		= xiafs_mount,
+	.kill_sb	= kill_block_super,
+	.fs_flags	= FS_REQUIRES_DEV,
+};</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-109">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-109">&#x00a7;</a>
+              </div>
+              <p>Initialize xiafs. If xiafs is compiled as a module this is run when the
+module is inserted, and if it is compiled into the kernel it will be run at
+boot time. <strong>N.B.:</strong> Xiafs could certainly be compiled into the kernel if you
+really wanted to, but the shipped <code>Makefile</code> only compiles it as a module.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> __init <span class="hljs-title function_">init_xiafs_fs</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-110">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-110">&#x00a7;</a>
+              </div>
+              <p>Initialize the inode cache. If this fails, skip directly to the end of the
+function and return the error.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-type">int</span> err = init_inodecache();
+	<span class="hljs-keyword">if</span> (err)
+		<span class="hljs-keyword">goto</span> out1;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-111">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-111">&#x00a7;</a>
+              </div>
+              <p>Register the xiafs filesystem with the kernel. Should this fail, skip just a
+little down to the <code>out</code> label so <code>destroy_inodecache</code> can be called.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	err = register_filesystem(&amp;xiafs_fs_type);
+	<span class="hljs-keyword">if</span> (err)
+		<span class="hljs-keyword">goto</span> out;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-112">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-112">&#x00a7;</a>
+              </div>
+              <p>Otherwise, it’s all good and we can return 0.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+out:</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-113">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-113">&#x00a7;</a>
+              </div>
+              <p>Shockingly, this destroys the inode cache.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	destroy_inodecache();
+out1:</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-114">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-114">&#x00a7;</a>
+              </div>
+              <p>Return whatever error code we got from initializing the inode cache or
+registering the filesystem.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">return</span> err;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-115">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-115">&#x00a7;</a>
+              </div>
+              <p>Unloads the xiafs module. Unregisters the filesystem type with the kernel and
+destroys the inode cache.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> __exit <span class="hljs-title function_">exit_xiafs_fs</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+        unregister_filesystem(&amp;xiafs_fs_type);
+	destroy_inodecache();
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-116">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-116">&#x00a7;</a>
+              </div>
+              <p>Set <code>init_xiafs_fs</code> to run when the module is loaded (or at boot time, if
+it’s compiled in) and initialize xiafs in the kernel.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+module_init(init_xiafs_fs)</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-117">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-117">&#x00a7;</a>
+              </div>
+              <p>Set <code>exit_xiafs_fs</code> to run when the module is unloaded from the kernel. If
+xiafs were to be compiled into the kernel, this would never be run.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+module_exit(exit_xiafs_fs)</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-118">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-118">&#x00a7;</a>
+              </div>
+              <p>Set the description of the module and specify the module’s license. It’s
+GPL, so our lives are much easier.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+MODULE_DESCRIPTION(<span class="hljs-string">&quot;Xiafs file system&quot;</span>);
+MODULE_LICENSE(<span class="hljs-string">&quot;GPL&quot;</span>);</pre></div></div>
+            
+        </li>
+        
+    </ul>
+  </div>
+</body>
+</html>

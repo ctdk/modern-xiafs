@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>xiafs.h</title>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
+  <link rel="stylesheet" media="all" href="docco.css" />
+</head>
+<body>
+  <div id="container">
+    <div id="background"></div>
+    
+      <ul id="jump_to">
+        <li>
+          <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
+          <a class="small" href="javascript:void(0);">+</a>
+          <div id="jump_wrapper">
+          <div id="jump_page_wrapper">
+            <div id="jump_page">
+              
+                
+                <a class="source" href="bitmap.html">
+                  bitmap.h
+                </a>
+              
+                
+                <a class="source" href="xiafs.html">
+                  xiafs.h
+                </a>
+              
+            </div>
+          </div>
+        </li>
+      </ul>
+    
+    <ul class="sections">
+        
+          <li id="title">
+              <div class="annotation">
+                  <h1>xiafs.h</h1>
+              </div>
+          </li>
+        
+        
+        
+        <li id="section-1">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-1">&#x00a7;</a>
+              </div>
+              
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-meta">#<span class="hljs-keyword">ifndef</span> _XIAFS_H</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> _XIAFS_H</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-2">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-2">&#x00a7;</a>
+              </div>
+              <p><code>xiafs.h</code> collects everything that was in the old header files and brings
+them together. Formerly there were a few header files, but for simplicity
+they’ve been merged. There are a lot of important definitions here, though,
+and it’s the best place to start for understanding how xiafs works.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-comment">/*
+ * Porting work to modern kernels copyright (C) Jeremy Bingham, 2013.
+ * Based on work by Linus Torvalds, Q. Frank Xia, and others as noted.
+ *
+ * This port of Q. Frank Xia&#x27;s xiafs was done using the existing minix
+ * filesystem code, but based on the original xiafs code in pre-2.1.21 or so
+ * kernels.
+ */</span>
+
+<span class="hljs-comment">/*
+ * Adapted from:
+ * include/linux/xia_fs.h
+ *
+ * Copyright (C) Q. Frank Xia, 1993.
+ *
+ * Based on Linus&#x27; minix_fs.h.
+ * Copyright (C) Linus Torvalds, 1991, 1992.
+ */</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/fs.h&gt;</span></span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-3">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-3">&#x00a7;</a>
+              </div>
+              <p>The xiafs magic number. This number is used in the superblock to identify to
+the kernel that this is, in fact, a xiafs filesystem. Incidentally, the hex
+number <code>0x012FD16D</code> is “19911021” in decimal, which may be the date the
+original author started working on xiafs. Other filesystems, unsurprisingly,
+have their own magic numbers.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> _XIAFS_SUPER_MAGIC 0x012FD16D</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-4">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-4">&#x00a7;</a>
+              </div>
+              <p>The root and bad inode numbers for xiafs are reversed from what they are for
+ext2 and UFS.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> _XIAFS_ROOT_INO 1</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> _XIAFS_BAD_INO  2</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-5">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-5">&#x00a7;</a>
+              </div>
+              <p>The maximum number of hard links a file can have. Why it’s 64000 and not
+65536, or even 32000 like ext2, is a bit of a mystery. It’s what was defined
+in the original xiafs code, though.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> _XIAFS_MAX_LINK 64000</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-6">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-6">&#x00a7;</a>
+              </div>
+              <p>A relic of figuring out how to make the hollowed out Minix directory code
+work with the xiafs dentries, which are quite different.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-comment">/* I think this is the equivalent of s_dirsize in the minix stuff */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> _XIAFS_DIR_SIZE 12</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-7">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-7">&#x00a7;</a>
+              </div>
+              <p>The number of block pointers in an inode. For xiafs it is 10: 8 direct block
+pointers, one indirect block pointer, and one doubly indirect block pointer.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> _XIAFS_NUM_BLOCK_POINTERS 10</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-8">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-8">&#x00a7;</a>
+              </div>
+              <p>Unlike the Minix filesystem (but like ext2), directory entries in xiafs are
+not fixed length. The original author of xiafs apparently picked a maximum
+file name length to keep each directory entry at a maximum of 256 bytes. A
+max file name length of 255 bytes is more standard.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> _XIAFS_NAME_LEN 248</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-9">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-9">&#x00a7;</a>
+              </div>
+              <p>Self-explanatory, but important. How many inodes can fit in a block? This
+macro will tell you. Theoretically xiafs could use blocks of varying sizes,
+but in actual fact elsewhere it’s hard coded to be 1024 bytes to a block.
+Thus, there are 16 inodes per block.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> _XIAFS_INODES_PER_BLOCK ((BLOCK_SIZE)/(sizeof(struct xiafs_inode)))</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-10">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-10">&#x00a7;</a>
+              </div>
+              <h1 id="the-inode">The Inode</h1>
+
+            </div>
+            
+        </li>
+        
+        
+        <li id="section-11">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-11">&#x00a7;</a>
+              </div>
+              <p>The on-disk xiafs inode. Taking up only 64 bytes, it’s less complicated than
+the ext2/3/4 inode (or most any other filesystem’s inodes you’d come across),
+except for storing the number of blocks used in the topmost byte of the first
+three block pointers, but it illustrates the basic data about a file an inode
+would be expected to have. Breaking it down:</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-keyword">struct</span> xiafs_inode {		<span class="hljs-comment">/* 64 bytes */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-12">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-12">&#x00a7;</a>
+              </div>
+              <p>The file mode. Describes the type of file (socket, symbolic link, regular
+file, directory, block or character device, directory, or FIFO), if it’s
+setuid, setgid, or has the sticky bit set, and the usual Unix access
+permissions.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+    __u16   i_mode;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-13">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-13">&#x00a7;</a>
+              </div>
+              <p>The number of hard links to the file. See <code>_XIAFS_MAX_LINK</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    __u16  i_nlinks;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-14">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-14">&#x00a7;</a>
+              </div>
+              <p>UID of the file’s owner.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+    __u16    i_uid;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-15">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-15">&#x00a7;</a>
+              </div>
+              <p>GID of the file.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+    __u16    i_gid;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-16">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-16">&#x00a7;</a>
+              </div>
+              <p>How big the file is in bytes.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+    __u32   i_size;		<span class="hljs-comment">/* 8 */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-17">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-17">&#x00a7;</a>
+              </div>
+              <p>Change, access, and modification timestamps. It seems like <code>ctime</code> ought to
+stand for “creation time”, but it doesn’t. These timestamps only have
+resolution to the second; this has to be addressed in <code>inode.c</code> when loading
+the xiafs inode data into the kernel’s inode struct because it uses a struct
+for <code>ctime</code>/<code>atime</code>/<code>mtime</code> that keeps time in both seconds and nanoseconds.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+    __u32   i_ctime;
+    __u32   i_atime;
+    __u32   i_mtime;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-18">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-18">&#x00a7;</a>
+              </div>
+              <p>The file’s block pointers. Xiafs uses the first 8 blocks as direct block
+pointers, with an indirect block pointer block and a doubly indrect block
+pointer block in the ninth and tenth slots respectively. The indirect block
+pointer points to a block that contains pointers to additional blocks on the
+disk. The doubly indirect pointer block pointer points to a block that
+contains pointers to blocks that then contains pointers to blocks to use for
+data. Since in practice xiafs is limited to using 1024 byte blocks, this
+gives a maximum file size of about 64 MB. Trebly indirect blocks, which are
+just like the doubly indirect blocks with an additional layer of block
+pointers, as seen in ext2 and ext3 (for example), allow even bigger file
+sizes. The Wikipedia article on <a href="https://en.wikipedia.org/wiki/Inode_pointer_structure">inode pointer structures</a>
+explains it pretty well.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+    __u32  i_zone[_XIAFS_NUM_BLOCK_POINTERS];
+};</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-19">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-19">&#x00a7;</a>
+              </div>
+              <h1 id="the-superblock">The Superblock</h1>
+<p>The xiafs superblock holds information and metadata about the filesystem on
+the device. With xiafs many of these fields are only of historical interest,
+but some are actually relevant. If the superblock is corrupted, the
+filesystem can’t be mounted.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-comment">/*
+ * linux super-block data on disk
+ */</span>
+<span class="hljs-keyword">struct</span> xiafs_super_block {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-20">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-20">&#x00a7;</a>
+              </div>
+              <p>Historically, a bootloader would have gone here. Trying to use xiafs for a
+bootable filesystem now would be prettyn nuts at best, but the first 512
+bytes of the block are still reserved. These are all set by <code>mkxfs</code> on
+filesystem creation.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+    u_char  s_boot_segment[<span class="hljs-number">512</span>];	<span class="hljs-comment">/*  1st sector reserved for boot */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-21">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-21">&#x00a7;</a>
+              </div>
+              <p>Always 1024.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+    __u32  s_zone_size;		<span class="hljs-comment">/*  0: the name says it		 */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-22">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-22">&#x00a7;</a>
+              </div>
+              <p>Accounting for the number of blocks (or zones, as xiafs generally refers to
+them), the number of inodes, the location of the first data zone, and maps
+of inodes and blocks.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+    __u32  s_nzones;			<span class="hljs-comment">/*  1: volume size, zone aligned */</span> 
+    __u32  s_ninodes;			<span class="hljs-comment">/*  2: # of inodes		 */</span>
+    __u32  s_ndatazones;		<span class="hljs-comment">/*  3: # of data zones		 */</span>
+    __u32  s_imap_zones;		<span class="hljs-comment">/*  4: # of imap zones           */</span>
+    __u32  s_zmap_zones;		<span class="hljs-comment">/*  5: # of zmap zones		 */</span>
+    __u32  s_firstdatazone;		<span class="hljs-comment">/*  6: first data zone           */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-23">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-23">&#x00a7;</a>
+              </div>
+              <p>Always ends up being 0, since the block size is always 1024 bytes.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+    __u32  s_zone_shift;		<span class="hljs-comment">/*  7: z size = 1KB &lt;&lt; z shift   */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-24">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-24">&#x00a7;</a>
+              </div>
+              <p>How big a file can get. As mentioned earlier, because of xiafs’ hard-coded
+1024 byte blocks, this limit is roughly 64MB.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+    __u32  s_max_size;			<span class="hljs-comment">/*  8: max size of a single file */</span>
+    __u32  s_reserved0;		<span class="hljs-comment">/*  9: reserved			 */</span>
+    __u32  s_reserved1;		<span class="hljs-comment">/* 10: 				 */</span>
+    __u32  s_reserved2;		<span class="hljs-comment">/* 11:				 */</span>
+    __u32  s_reserved3;		<span class="hljs-comment">/* 12:				 */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-25">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-25">&#x00a7;</a>
+              </div>
+              <p>These are, again, only of historic interest.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>    __u32  s_firstkernzone;		<span class="hljs-comment">/* 13: first kernel zone	 */</span>
+    __u32  s_kernzones;		<span class="hljs-comment">/* 14: kernel size in zones	 */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-26">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-26">&#x00a7;</a>
+              </div>
+              <p>Holds the magic number used to identify this as a xiafs filesystem.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+    __u32  s_magic;			<span class="hljs-comment">/* 15: magic number for xiafs    */</span>
+};</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-27">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-27">&#x00a7;</a>
+              </div>
+              <h1 id="the-directory-entry">The Directory Entry</h1>
+<p>Since inodes hold no informatin about the name of the file, that information
+is stored in a directory entry instead. This is how you can have multiple
+names referring to one file with hard links and why you can’t hard link files
+across different filesystems. At the same time, the directory entry saves no
+information on the file’s ownership, permissions, etc; that information is
+all stored in the inode.</p>
+<p>It all fits into 256 bytes, which is why <code>_XIAFS_NAME_LEN</code> has the somewhat
+unintuitive value of 248 bytes. Unlike the Minix fs, but like ext2, xiafs has
+variable length directory entries. The directory entry struct holds the
+inode, length of the directory entry rectord, the file name length, and the
+file name. See <code>dir.c</code> for more on this.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-keyword">struct</span> xiafs_direct {
+    __u32   d_ino;
+    u_short d_rec_len;
+    u_char  d_name_len;
+    <span class="hljs-keyword">char</span>    d_name[_XIAFS_NAME_LEN+<span class="hljs-number">1</span>];
+};
+
+<span class="hljs-comment">/*
+ * Adapted from:
+ * include/linux/xia_fs_i.h
+ *
+ * Copyright (C) Q. Frank Xia, 1993.
+ *
+ * Based on Linus&#x27; minix_fs_i.h.
+ * Copyright (C) Linus Torvalds, 1991, 1992.
+ */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-28">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-28">&#x00a7;</a>
+              </div>
+              <h1 id="inode-info">Inode Info</h1>
+<p>Holds information about the xiafs inode. Simpler than the equivalanet in
+ext2, <code>xiafs_inode_info</code> only has block pointers and a pointer to a
+<code>vfs_inode</code> struct.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-keyword">struct</span> xiafs_inode_info {               <span class="hljs-comment">/* for data zone pointers */</span>
+    __u32  i_zone[_XIAFS_NUM_BLOCK_POINTERS];
+    <span class="hljs-keyword">struct</span> inode vfs_inode;
+};
+
+<span class="hljs-comment">/*
+ * Adapted from:
+ * include/linux/xia_fs_sb.h
+ *
+ * Copyright (C) Q. Frank Xia, 1993.
+ *
+ * Based on Linus&#x27; minix_fs_sb.h.
+ * Copyright (C) Linus Torvalds, 1991, 1992.
+ */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-29">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-29">&#x00a7;</a>
+              </div>
+              <p>The number of inode and zone (block) bitmap slots.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> _XIAFS_IMAP_SLOTS 8</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> _XIAFS_ZMAP_SLOTS 32</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-30">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-30">&#x00a7;</a>
+              </div>
+              <h1 id="superblock-info">Superblock Info</h1>
+<p>Used by the kernel to hold the filesystem’s superblock metadata in memory
+while the filesystem is mounted. The fields here have the same meaning that
+they do above.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-keyword">struct</span> xiafs_sb_info {
+    u_long   s_nzones;
+    u_long   s_ninodes;
+    u_long   s_ndatazones;
+    u_long   s_imap_zones;
+    u_long   s_zmap_zones;
+    u_long   s_firstdatazone;
+    u_long   s_zone_shift;
+    u_long   s_max_size;                                <span class="hljs-comment">/*  32 bytes */</span>
+    <span class="hljs-keyword">struct</span> buffer_head ** s_imap_buf; <span class="hljs-comment">/*  32 bytes */</span>
+    <span class="hljs-keyword">struct</span> buffer_head ** s_zmap_buf; <span class="hljs-comment">/* 128 bytes */</span>
+    u_char   s_imap_cached;                     <span class="hljs-comment">/* flag for cached imap */</span>
+    u_char   s_zmap_cached;                     <span class="hljs-comment">/* flag for cached imap */</span>
+};
+
+<span class="hljs-comment">/*
+ *  Adapted from:
+ *  linux/fs/xiafs/xiafs_mac.h
+ *
+ *  Copyright (C) Q. Frank Xia, 1993.
+ */</span>
+
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">char</span> internal_error_message[];
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> INTERN_ERR              internal_error_message, __FILE__, __LINE__</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> WHERE_ERR               __FILE__, __LINE__</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-31">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-31">&#x00a7;</a>
+              </div>
+              <p>These macros help simplify some calculations to determine block size, the
+number of addresses and inodes per block, the number of bits per block, and
+the value of some bitshifts for counting free blocks and zones in <code>bitmap.c</code>.
+Of course, since the block size is hard coded these values never actually
+change.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> XIAFS_ZSHIFT(sp)                ((sp)-&gt;s_zone_shift)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> XIAFS_ZSIZE(sp)         (BLOCK_SIZE &lt;&lt; XIAFS_ZSHIFT(sp))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> XIAFS_ZSIZE_BITS(sp)    (BLOCK_SIZE_BITS + XIAFS_ZSHIFT(sp))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> XIAFS_ADDRS_PER_Z(sp)           (BLOCK_SIZE &gt;&gt; (2 - XIAFS_ZSHIFT(sp)))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> XIAFS_ADDRS_PER_Z_BITS(sp)      (BLOCK_SIZE_BITS - 2 + XIAFS_ZSHIFT(sp))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> XIAFS_BITS_PER_Z(sp)    (BLOCK_SIZE  &lt;&lt; (3 + XIAFS_ZSHIFT(sp)))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> XIAFS_BITS_PER_Z_BITS(sp)       (BLOCK_SIZE_BITS + 3 + XIAFS_ZSHIFT(sp))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> XIAFS_INODES_PER_Z(sp)  (_XIAFS_INODES_PER_BLOCK &lt;&lt; XIAFS_ZSHIFT(sp))</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-32">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-32">&#x00a7;</a>
+              </div>
+              <p>This part’s frankly pretty nuts. Long ago, in order to free up some space in
+the someone cramped 64 byte xiafs inode, the value that would normally be
+kept in <code>i_blocks</code> in most filesystem inodes (namely, the number of blocks
+the inode is using) got moved out of its own field into the topmost byte of
+the first three block pointers. These macros extract that information and put
+it back, respectively. If nothing else, this reminds us that sometimes space
+and memory are precious.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-comment">/* Use the most significant bytes of zone pointers to store block counter. */</span>
+<span class="hljs-comment">/* This is ugly, but it works. Note, We have another 7 bytes for &quot;expansion&quot;. */</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> XIAFS_GET_BLOCKS(row_ip, blocks)  \
+  blocks=((((row_ip)-&gt;i_zone[0] &gt;&gt; 24) &amp; 0xff )|\
+          (((row_ip)-&gt;i_zone[1] &gt;&gt; 16) &amp; 0xff00 )|\
+          (((row_ip)-&gt;i_zone[2] &gt;&gt;  8) &amp; 0xff0000 ) )</span>
+
+<span class="hljs-comment">/* XIAFS_PUT_BLOCKS should be called before saving zone pointers */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> XIAFS_PUT_BLOCKS(row_ip, blocks)  \
+  (row_ip)-&gt;i_zone[2]=((blocks)&lt;&lt; 8) &amp; 0xff000000;\
+  (row_ip)-&gt;i_zone[1]=((blocks)&lt;&lt;16) &amp; 0xff000000;\
+  (row_ip)-&gt;i_zone[0]=((blocks)&lt;&lt;24) &amp; 0xff000000</span>
+
+<span class="hljs-comment">/* sb_info taken from 2.6.32 minix */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-33">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-33">&#x00a7;</a>
+              </div>
+              <p>Unsurprisingly, returns the superblock information.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-keyword">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-keyword">struct</span> xiafs_sb_info *xiafs_sb(<span class="hljs-keyword">struct</span> super_block *sb)
+{
+        <span class="hljs-keyword">return</span> sb-&gt;s_fs_info;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-34">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-34">&#x00a7;</a>
+              </div>
+              <p>Much like the previous function, this helper function returns the inode’s
+<code>xiafs_inode_info</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-keyword">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-keyword">struct</span> xiafs_inode_info *xiafs_i(<span class="hljs-keyword">struct</span> inode *inode)
+{
+        <span class="hljs-keyword">return</span> list_entry(inode, <span class="hljs-keyword">struct</span> xiafs_inode_info, vfs_inode);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-35">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-35">&#x00a7;</a>
+              </div>
+              <p>A macro and function that are only useful for hacking on the filesystem. That
+said, this proved to be very useful when trying to discern what on earth was
+going on and why something wouldn’t work. Once you do figure out what was
+wrong, though, calls to this should be removed. Your logs will thank you.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-comment">/* be able to dump out data */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> PRINT_OPAQUE_DATA(p)  print_mem((p), sizeof(*(p)))</span>
+<span class="hljs-keyword">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-keyword">void</span> print_mem(<span class="hljs-keyword">void</span> <span class="hljs-keyword">const</span> *vp, size_t n){
+	<span class="hljs-keyword">unsigned</span> <span class="hljs-keyword">char</span> <span class="hljs-keyword">const</span> *p = vp;
+	size_t i;
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; n; i++)
+		printk(<span class="hljs-string">&quot;%02x &quot;</span>, p[i]);
+	printk(<span class="hljs-string">&quot;\n&quot;</span>);
+	}
+
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> __KERNEL__</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-36">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-36">&#x00a7;</a>
+              </div>
+              <p>Function definitions. The meat of these is kept in their respective .c files.
+<strong>N.B.</strong> These headers have a habit of changing subtly between kernel
+versions because of updates to filesystem APIs elsewhere in the kernel. </p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">struct</span> inode * xiafs_new_inode(<span class="hljs-keyword">const</span> <span class="hljs-keyword">struct</span> inode * dir, umode_t mode, <span class="hljs-keyword">int</span> * error);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">void</span> xiafs_free_inode(<span class="hljs-keyword">struct</span> inode * inode);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">unsigned</span> <span class="hljs-keyword">long</span> xiafs_count_free_inodes(<span class="hljs-keyword">struct</span> xiafs_sb_info *sbi);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">int</span> xiafs_prepare_chunk(<span class="hljs-keyword">struct</span> folio *folio, loff_t pos, <span class="hljs-keyword">unsigned</span> len);
+
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">void</span> xiafs_set_inode(<span class="hljs-keyword">struct</span> inode *, dev_t);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">int</span> xiafs_add_link(<span class="hljs-keyword">struct</span> dentry*, <span class="hljs-keyword">struct</span> inode*);
+<span class="hljs-keyword">extern</span> ino_t xiafs_inode_by_name(<span class="hljs-keyword">struct</span> dentry*);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">int</span> xiafs_make_empty(<span class="hljs-keyword">struct</span> inode*, <span class="hljs-keyword">struct</span> inode*);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">struct</span> xiafs_direct *xiafs_find_entry(<span class="hljs-keyword">struct</span> dentry*, <span class="hljs-keyword">struct</span> folio**, <span class="hljs-keyword">struct</span> xiafs_direct**);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">int</span> xiafs_delete_entry(<span class="hljs-keyword">struct</span> xiafs_direct*, <span class="hljs-keyword">struct</span> xiafs_direct*, <span class="hljs-keyword">struct</span> folio*);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">struct</span> xiafs_direct *xiafs_dotdot(<span class="hljs-keyword">struct</span> inode*, <span class="hljs-keyword">struct</span> folio**);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">int</span> xiafs_set_link(<span class="hljs-keyword">struct</span> xiafs_direct*, <span class="hljs-keyword">struct</span> folio*, <span class="hljs-keyword">struct</span> inode*);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">int</span> xiafs_empty_dir(<span class="hljs-keyword">struct</span> inode*);
+
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">void</span> xiafs_truncate(<span class="hljs-keyword">struct</span> inode *);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">struct</span> inode * xiafs_iget(<span class="hljs-keyword">struct</span> super_block *, <span class="hljs-keyword">unsigned</span> <span class="hljs-keyword">long</span>);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">int</span> xiafs_getattr(<span class="hljs-keyword">struct</span> mnt_idmap *, <span class="hljs-keyword">const</span> <span class="hljs-keyword">struct</span> path *path, <span class="hljs-keyword">struct</span> kstat *stat, u32 request_mask, <span class="hljs-keyword">unsigned</span> <span class="hljs-keyword">int</span> flags);
+
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">struct</span> inode_operations xiafs_file_inode_operations;
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">struct</span> inode_operations xiafs_dir_inode_operations;
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">struct</span> file_operations xiafs_file_operations;
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">const</span> <span class="hljs-keyword">struct</span> file_operations xiafs_dir_operations;
+
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">int</span> xiafs_new_block(<span class="hljs-keyword">struct</span> inode * inode);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">unsigned</span> <span class="hljs-keyword">long</span> xiafs_count_free_blocks(<span class="hljs-keyword">struct</span> xiafs_sb_info * sbi);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">void</span> xiafs_free_block(<span class="hljs-keyword">struct</span> inode * inode, <span class="hljs-keyword">unsigned</span> <span class="hljs-keyword">long</span> block);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">int</span> xiafs_get_block(<span class="hljs-keyword">struct</span> inode * inode, sector_t block, <span class="hljs-keyword">struct</span> buffer_head *bh_result, <span class="hljs-keyword">int</span> create);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">struct</span> xiafs_inode * xiafs_raw_inode(<span class="hljs-keyword">struct</span> super_block *sb, ino_t ino, <span class="hljs-keyword">struct</span> buffer_head **bh);
+<span class="hljs-keyword">extern</span> <span class="hljs-keyword">unsigned</span> xiafs_blocks(loff_t size, <span class="hljs-keyword">struct</span> super_block *sb);
+
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span> <span class="hljs-comment">/* __KERNEL__ */</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span>  <span class="hljs-comment">/* _XIAFS_H */</span></span></pre></div></div>
+            
+        </li>
+        
+    </ul>
+  </div>
+</body>
+</html>

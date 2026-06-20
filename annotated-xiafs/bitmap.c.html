@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>bitmap.c</title>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
+  <link rel="stylesheet" media="all" href="docco.css" />
+</head>
+<body>
+  <div id="container">
+    <div id="background"></div>
+    
+      <ul id="jump_to">
+        <li>
+          <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
+          <a class="small" href="javascript:void(0);">+</a>
+          <div id="jump_wrapper">
+          <div id="jump_page_wrapper">
+            <div id="jump_page">
+              
+                
+                <a class="source" href="bitmap.html">
+                  bitmap.c
+                </a>
+              
+                
+                <a class="source" href="dir.html">
+                  dir.c
+                </a>
+              
+                
+                <a class="source" href="file.html">
+                  file.c
+                </a>
+              
+                
+                <a class="source" href="inode.html">
+                  inode.c
+                </a>
+              
+                
+                <a class="source" href="itree.html">
+                  itree.c
+                </a>
+              
+                
+                <a class="source" href="namei.html">
+                  namei.c
+                </a>
+              
+            </div>
+          </div>
+        </li>
+      </ul>
+    
+    <ul class="sections">
+        
+          <li id="title">
+              <div class="annotation">
+                  <h1>bitmap.c</h1>
+              </div>
+          </li>
+        
+        
+        
+        <li id="section-1">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-1">&#x00a7;</a>
+              </div>
+              <p>Before diving into this, some
+<a href="https://en.wikipedia.org/wiki/Bit_array">background on bitmaps</a> may be
+useful. The functions in this file are, at least, well named.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-comment">/*
+ * Porting work to modern kernels copyright (C) Jeremy Bingham, 2013.
+ * Based on work by Linus Torvalds, Q. Frank Xia, and others as noted.
+ *
+ * This port of Q. Frank Xia&#x27;s xiafs was done using the existing minix
+ * filesystem code, but based on the original xiafs code in pre-2.1.21 or so
+ * kernels.
+ */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-2">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-2">&#x00a7;</a>
+              </div>
+              <p>Most of the functions in this file haven’t changed a whole lot since the
+previous annotated xiafs code for version 3.12.1. The one major change
+will be noted and explained.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-comment">/*
+ *  linux/fs/xiafs/bitmap.c
+ *
+ *  Copyright (C) 1991, 1992  Linus Torvalds
+ */</span>
+
+<span class="hljs-comment">/*
+ * Modified for 680x0 by Hamish Macdonald
+ * Fixed for 680x0 by Andreas Schwab
+ */</span>
+
+<span class="hljs-comment">/* bitmap.c contains the code that handles the inode and block bitmaps */</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;xiafs.h&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;bitmap.h&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/fs.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/buffer_head.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/bitops.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/sched.h&gt;</span></span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-3">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-3">&#x00a7;</a>
+              </div>
+              <p>Taken straight from the original xiafs code in the ancient Linux kernel.
+Interestingly, it’s the reverse of the nibblemap found in older versions of
+the ext2/3 and minix bitmap code.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-type">int</span> nibblemap[] = { <span class="hljs-number">0</span>,<span class="hljs-number">1</span>,<span class="hljs-number">1</span>,<span class="hljs-number">2</span>,<span class="hljs-number">1</span>,<span class="hljs-number">2</span>,<span class="hljs-number">2</span>,<span class="hljs-number">3</span>,<span class="hljs-number">1</span>,<span class="hljs-number">2</span>,<span class="hljs-number">2</span>,<span class="hljs-number">3</span>,<span class="hljs-number">2</span>,<span class="hljs-number">3</span>,<span class="hljs-number">3</span>,<span class="hljs-number">4</span> };
+
+<span class="hljs-type">static</span> <span class="hljs-title function_">DEFINE_SPINLOCK</span><span class="hljs-params">(bitmap_lock)</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-4">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-4">&#x00a7;</a>
+              </div>
+              <p>Helper function for counting used inodes and blocks. Walks through the
+provided map buffer and returns the number of used items. The functions that
+call this subtract this number from the overall number of inodes or blocks.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-title function_">count_used</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> buffer_head *<span class="hljs-built_in">map</span>[], <span class="hljs-type">unsigned</span> numblocks, __u32 numbits)</span>
+{
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> i, j, sum = <span class="hljs-number">0</span>;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">buffer_head</span> *<span class="hljs-title">bh</span>;</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-5">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-5">&#x00a7;</a>
+              </div>
+              <p>This could stand to be rewritten entirely. Doing it this way, with the
+nibblemap, is the old way it was done.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">for</span> (i=<span class="hljs-number">0</span>; i&lt;numblocks; i++) {
+		<span class="hljs-keyword">if</span> (!(bh=<span class="hljs-built_in">map</span>[i])) 
+			<span class="hljs-keyword">return</span>(<span class="hljs-number">0</span>);
+		<span class="hljs-keyword">for</span> (j=<span class="hljs-number">0</span>; j&lt;bh-&gt;b_size; j++)
+			sum += nibblemap[bh-&gt;b_data[j] &amp; <span class="hljs-number">0xf</span>]
+				+ nibblemap[(bh-&gt;b_data[j]&gt;&gt;<span class="hljs-number">4</span>) &amp; <span class="hljs-number">0xf</span>];
+	}
+
+	<span class="hljs-keyword">if</span> (numblocks==<span class="hljs-number">0</span> || !(bh=<span class="hljs-built_in">map</span>[numblocks<span class="hljs-number">-1</span>]))
+		<span class="hljs-keyword">return</span>(<span class="hljs-number">0</span>);
+	
+	<span class="hljs-keyword">return</span>(sum);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-6">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-6">&#x00a7;</a>
+              </div>
+              <p>Free a block.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">void</span> <span class="hljs-title function_">xiafs_free_block</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> block)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">super_block</span> *<span class="hljs-title">sb</span> =</span> inode-&gt;i_sb;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_sb_info</span> *<span class="hljs-title">sbi</span> =</span> xiafs_sb(sb);
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">buffer_head</span> *<span class="hljs-title">bh</span>;</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-7">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-7">&#x00a7;</a>
+              </div>
+              <p>Calculate the bitshift for finding the zone the block is in and which bit in
+the bitmap refers to that block.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-type">int</span> k = sb-&gt;s_blocksize_bits + <span class="hljs-number">3</span>;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> bit, zone;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-8">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-8">&#x00a7;</a>
+              </div>
+              <p>Trying to free a block that’s out of range is very bad.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (block &lt; sbi-&gt;s_firstdatazone || block &gt;= sbi-&gt;s_nzones) {
+		printk(<span class="hljs-string">&quot;Trying to free block not in datazone\n&quot;</span>);
+		<span class="hljs-keyword">return</span>;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-9">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-9">&#x00a7;</a>
+              </div>
+              <p>Start calculating the zone the block is in. First subtract the location of
+the first data zone (+1) from the block we’re freeing.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	zone = block - sbi-&gt;s_firstdatazone + <span class="hljs-number">1</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-10">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-10">&#x00a7;</a>
+              </div>
+              <p>By left shifting the bitshift calculated above and ANDing the zone with that
+(minus 1), we get the bit in the bitmap referring to this block.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	bit = zone &amp; ((<span class="hljs-number">1</span>&lt;&lt;k) - <span class="hljs-number">1</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-11">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-11">&#x00a7;</a>
+              </div>
+              <p>Right bitshift the zone by <code>k</code> to determine which bitmap slot to use.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	zone &gt;&gt;= k;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-12">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-12">&#x00a7;</a>
+              </div>
+              <p>Don’t want to use a non-existent bitmap either.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (zone &gt;= sbi-&gt;s_zmap_zones) {
+		printk(<span class="hljs-string">&quot;xiafs_free_block: nonexistent bitmap buffer\n&quot;</span>);
+		<span class="hljs-keyword">return</span>;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-13">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-13">&#x00a7;</a>
+              </div>
+              <p>Get the buffer for the zone map this block is mapped in, and take the mutex.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	bh = sbi-&gt;s_zmap_buf[zone];
+	spin_lock(&amp;bitmap_lock);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-14">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-14">&#x00a7;</a>
+              </div>
+              <p>Test and clear the bit for this block in the bitmap. If it’s already cleared,
+then the block was already freed.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!xiafs_test_and_clear_bit(bit, bh-&gt;b_data))
+		printk(<span class="hljs-string">&quot;xiafs_free_block (%s:%lu): bit already cleared\n&quot;</span>,
+		       sb-&gt;s_id, block);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-15">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-15">&#x00a7;</a>
+              </div>
+              <p>Decrease the number of blocks on disk this inode is using. It always ends up
+being 2 because xiafs only uses 1024 byte blocks.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	inode-&gt;i_blocks -= <span class="hljs-number">2</span> &lt;&lt; XIAFS_ZSHIFT(sbi);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-16">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-16">&#x00a7;</a>
+              </div>
+              <p>Release the mutex.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	spin_unlock(&amp;bitmap_lock);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-17">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-17">&#x00a7;</a>
+              </div>
+              <p>Mark the buffer as dirty so it gets written out when the kernel’s ready.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	mark_buffer_dirty(bh);
+	<span class="hljs-keyword">return</span>;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-18">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-18">&#x00a7;</a>
+              </div>
+              <p>Allocate a new block to an inode.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_new_block</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode * inode)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_sb_info</span> *<span class="hljs-title">sbi</span> =</span> xiafs_sb(inode-&gt;i_sb);
+	<span class="hljs-type">int</span> bits_per_zone = XIAFS_BITS_PER_Z(sbi);
+	<span class="hljs-type">int</span> i;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-19">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-19">&#x00a7;</a>
+              </div>
+              <p>Loop over each zone map.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; sbi-&gt;s_zmap_zones; i++) {
+		<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">buffer_head</span> *<span class="hljs-title">bh</span> =</span> sbi-&gt;s_zmap_buf[i];
+		<span class="hljs-type">int</span> j;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-20">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-20">&#x00a7;</a>
+              </div>
+              <p>Lock the mutex on this zone map.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		spin_lock(&amp;bitmap_lock);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-21">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-21">&#x00a7;</a>
+              </div>
+              <p>Search for a zero bit (representing a free block) in the bitmap.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		j = xiafs_find_first_zero_bit(bh-&gt;b_data, bits_per_zone);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-22">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-22">&#x00a7;</a>
+              </div>
+              <p>If <code>j</code> is less than bits_per_zone, then a zero bit was found and there’s a
+free block in this zone.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">if</span> (j &lt; bits_per_zone) {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-23">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-23">&#x00a7;</a>
+              </div>
+              <p>Set the bit of the block that will be allocated to 1 and release the mutex.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			xiafs_set_bit(j, bh-&gt;b_data);
+			spin_unlock(&amp;bitmap_lock);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-24">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-24">&#x00a7;</a>
+              </div>
+              <p>Mark the buffer as dirty since it was just changed.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			mark_buffer_dirty(bh);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-25">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-25">&#x00a7;</a>
+              </div>
+              <p>Get the locationof the block being allocated.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			j += i * bits_per_zone + sbi-&gt;s_firstdatazone<span class="hljs-number">-1</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-26">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-26">&#x00a7;</a>
+              </div>
+              <p>If the block that would be allocated is outside of the data block range, bail
+completely.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			<span class="hljs-keyword">if</span> (j &lt; sbi-&gt;s_firstdatazone || j &gt;= sbi-&gt;s_nzones)
+				<span class="hljs-keyword">break</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-27">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-27">&#x00a7;</a>
+              </div>
+              <p>Increment <code>i_blocks</code> (always by 2, since one 1024 byte block is two 512 byte
+sectors on disk, since the filesystem blocksize is always 1024 with xiafs)
+and return the block number.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			inode-&gt;i_blocks += <span class="hljs-number">2</span> &lt;&lt; XIAFS_ZSHIFT(sbi);
+			<span class="hljs-keyword">return</span> j;
+		}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-28">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-28">&#x00a7;</a>
+              </div>
+              <p>Release the mutex on this zone map if we didn’t find a free block in this
+zone.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>		spin_unlock(&amp;bitmap_lock);
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-29">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-29">&#x00a7;</a>
+              </div>
+              <p>If it got here, no free block was found.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-30">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-30">&#x00a7;</a>
+              </div>
+              <p>Return the number of free blocks on the filesystem.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-title function_">xiafs_count_free_blocks</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> xiafs_sb_info *sbi)</span>
+{
+	<span class="hljs-keyword">return</span> ((sbi-&gt;s_zmap_zones &lt;&lt; XIAFS_BITS_PER_Z_BITS(sbi)) - count_used(sbi-&gt;s_zmap_buf, sbi-&gt;s_zmap_zones,
+		sbi-&gt;s_nzones - sbi-&gt;s_firstdatazone + <span class="hljs-number">1</span>));
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-31">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-31">&#x00a7;</a>
+              </div>
+              <p>Get the raw xiafs inode from disk.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-keyword">struct</span> xiafs_inode *
+<span class="hljs-title function_">xiafs_raw_inode</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> super_block *sb, <span class="hljs-type">ino_t</span> ino, <span class="hljs-keyword">struct</span> buffer_head **bh)</span>
+{
+	<span class="hljs-type">int</span> block;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_sb_info</span> *<span class="hljs-title">sbi</span> =</span> xiafs_sb(sb);
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_inode</span> *<span class="hljs-title">p</span>;</span>
+	<span class="hljs-type">int</span> xiafs_inodes_per_block = _XIAFS_INODES_PER_BLOCK; 
+
+	*bh = <span class="hljs-literal">NULL</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-32">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-32">&#x00a7;</a>
+              </div>
+              <p>Avoid the heartbreak of trying to get a raw inode with an inode number of 0,
+or an inode number that’s just plain too big.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!ino || ino &gt; sbi-&gt;s_ninodes) {
+		printk(<span class="hljs-string">&quot;Bad inode number on dev %s: %ld is out of range\n&quot;</span>,
+		       sb-&gt;s_id, (<span class="hljs-type">long</span>)ino);
+		<span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+	}
+	ino--;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-33">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-33">&#x00a7;</a>
+              </div>
+              <p>Jump past the superblock and the blocks holdign the inode and block bitmaps.
+Since there are <code>_XIAFS_INODES_PER_BLOCK</code>, it logically follows that dividing
+the inode number by the number of inodes per block would give the block the
+inode resides on.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	block = <span class="hljs-number">1</span> + sbi-&gt;s_imap_zones + sbi-&gt;s_zmap_zones +
+		 ino / xiafs_inodes_per_block;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-34">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-34">&#x00a7;</a>
+              </div>
+              <p>Read the block holding the inode.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	*bh = sb_bread(sb, block);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-35">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-35">&#x00a7;</a>
+              </div>
+              <p>If we couldn’t read the inode block, print an error to that effect and return
+<code>NULL</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!*bh) {
+		printk(<span class="hljs-string">&quot;Unable to read inode block\n&quot;</span>);
+		<span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-36">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-36">&#x00a7;</a>
+              </div>
+              <p>With a little pointer arithmetic, we get the address of the raw inode.
+<code>ino % xiafs_inodes_per_block</code> is which inode on th is block is the right one
+(<em>e.g.</em> with inode 219, the offset in the block would be 11), so the inode at
+that offset from <code>p</code> is the one requested.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	p = (<span class="hljs-type">void</span> *)(*bh)-&gt;b_data;
+	<span class="hljs-keyword">return</span> p + ino % xiafs_inodes_per_block;
+}
+
+<span class="hljs-comment">/* Clear the link count and mode of a deleted inode on disk. */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-37">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-37">&#x00a7;</a>
+              </div>
+              <p>This function’s pretty self explanatory.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">xiafs_clear_inode</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">buffer_head</span> *<span class="hljs-title">bh</span> =</span> <span class="hljs-literal">NULL</span>;
+
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_inode</span> *<span class="hljs-title">raw_inode</span>;</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-38">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-38">&#x00a7;</a>
+              </div>
+              <p>Grab the raw inode.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	raw_inode = xiafs_raw_inode(inode-&gt;i_sb, inode-&gt;i_ino, &amp;bh);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-39">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-39">&#x00a7;</a>
+              </div>
+              <p>If there’s a raw inode, set the links to 0, so it’s not set as having any
+directory entries pointing at this inode, and set <code>i_mode</code> to 0 so this inode
+is not any valid kind of file and has no permissions associated with it.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (raw_inode) {
+		raw_inode-&gt;i_nlinks = <span class="hljs-number">0</span>;
+		raw_inode-&gt;i_mode = <span class="hljs-number">0</span>;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-40">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-40">&#x00a7;</a>
+              </div>
+              <p>If <code>bh</code> isn’t <code>NULL</code>, the buffer it’s pointing at needs to be marked dirty
+and released.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (bh) {
+		mark_buffer_dirty(bh);
+		brelse (bh);
+	}
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-41">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-41">&#x00a7;</a>
+              </div>
+              <p>Mark an inode as free in the inode map.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">void</span> <span class="hljs-title function_">xiafs_free_inode</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode * inode)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">super_block</span> *<span class="hljs-title">sb</span> =</span> inode-&gt;i_sb;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_sb_info</span> *<span class="hljs-title">sbi</span> =</span> xiafs_sb(inode-&gt;i_sb);
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">buffer_head</span> *<span class="hljs-title">bh</span>;</span>
+	<span class="hljs-type">int</span> k = sb-&gt;s_blocksize_bits + <span class="hljs-number">3</span>;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> ino, bit;
+
+	ino = inode-&gt;i_ino;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-42">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-42">&#x00a7;</a>
+              </div>
+              <p>Can’t free nonexistent inodes.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (ino &lt; <span class="hljs-number">1</span> || ino &gt; sbi-&gt;s_ninodes) {
+		printk(<span class="hljs-string">&quot;xiafs_free_inode: inode 0 or nonexistent inode\n&quot;</span>);
+		<span class="hljs-keyword">return</span>;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-43">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-43">&#x00a7;</a>
+              </div>
+              <p>Determine which bit in the inode map refers to this inode.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	bit = ino &amp; ((<span class="hljs-number">1</span>&lt;&lt;k) - <span class="hljs-number">1</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-44">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-44">&#x00a7;</a>
+              </div>
+              <p>Determine which inode map slot this inode is in.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	ino &gt;&gt;= k;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-45">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-45">&#x00a7;</a>
+              </div>
+              <p>Also can’t free inodes that would be outside of the inode map’s range.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (ino &gt;= sbi-&gt;s_imap_zones) {
+		printk(<span class="hljs-string">&quot;xiafs_free_inode: nonexistent imap in superblock\n&quot;</span>);
+		<span class="hljs-keyword">return</span>;
+	}
+
+	xiafs_clear_inode(inode);	<span class="hljs-comment">/* clear on-disk copy */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-46">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-46">&#x00a7;</a>
+              </div>
+              <p>Get the inode map buffer and take the map’s mutex.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	bh = sbi-&gt;s_imap_buf[ino];
+	spin_lock(&amp;bitmap_lock);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-47">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-47">&#x00a7;</a>
+              </div>
+              <p>Clear the bit in the map so the system knows the inode is free. If it was
+already clear, then the filesystem thought this inode had already been freed.
+The filesystem may be corrupted if this happens, or something’s wrong with
+the xiafs module where it isn’t reading the map right. Either way, something
+is wrong.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!xiafs_test_and_clear_bit(bit, bh-&gt;b_data))
+		printk(<span class="hljs-string">&quot;xiafs_free_inode: bit %lu already cleared\n&quot;</span>, bit);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-48">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-48">&#x00a7;</a>
+              </div>
+              <p>Release the mutex and mark the buffer dirty.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	spin_unlock(&amp;bitmap_lock);
+	mark_buffer_dirty(bh);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-49">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-49">&#x00a7;</a>
+              </div>
+              <p>Initialize a new inode.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-keyword">struct</span> inode * <span class="hljs-title function_">xiafs_new_inode</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> inode * dir, <span class="hljs-type">umode_t</span> mode, <span class="hljs-type">int</span> * error)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">super_block</span> *<span class="hljs-title">sb</span> =</span> dir-&gt;i_sb;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_sb_info</span> *<span class="hljs-title">sbi</span> =</span> xiafs_sb(sb);
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">inode</span> *<span class="hljs-title">inode</span> =</span> new_inode(sb);
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">buffer_head</span> * <span class="hljs-title">bh</span>;</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-50">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-50">&#x00a7;</a>
+              </div>
+              <p>This may not be portable to the PDP-10 and other machines with bytes that do
+not equal 8 bits.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-type">int</span> bits_per_zone = <span class="hljs-number">8</span> * sb-&gt;s_blocksize;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> j;
+	<span class="hljs-type">int</span> i;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-51">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-51">&#x00a7;</a>
+              </div>
+              <p>Error checking. If getting a new inode failed, bail with an “out of memory”
+error.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!inode) {
+		*error = -ENOMEM;
+		<span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+	}
+	j = bits_per_zone;
+	bh = <span class="hljs-literal">NULL</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-52">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-52">&#x00a7;</a>
+              </div>
+              <p>Set the error pointer ahead of time to “no space” for the subsequent
+operations. Also, take the mutex while we’re at it.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	*error = -ENOSPC;
+	spin_lock(&amp;bitmap_lock);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-53">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-53">&#x00a7;</a>
+              </div>
+              <p>Search the inode map for a free inode, breaking if we find one.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; sbi-&gt;s_imap_zones; i++) {
+		bh = sbi-&gt;s_imap_buf[i];
+		j = xiafs_find_first_zero_bit(bh-&gt;b_data, bits_per_zone);
+		<span class="hljs-keyword">if</span> (j &lt; bits_per_zone)
+			<span class="hljs-keyword">break</span>;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-54">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-54">&#x00a7;</a>
+              </div>
+              <p>Bail if there’s no map buffer or if <code>j</code> somehow got set to more than
+<code>bits_per_zone</code> (which because of those hard coded limits with xiafs block
+sizes is always 8192).</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!bh || j &gt;= bits_per_zone) {
+		spin_unlock(&amp;bitmap_lock);
+		iput(inode);
+		<span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-55">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-55">&#x00a7;</a>
+              </div>
+              <p>Shouldn’t happen, but if it does you want to know about it. If this is true,
+the inode was already marked as used.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (xiafs_test_and_set_bit(j, bh-&gt;b_data)) {	<span class="hljs-comment">/* shouldn&#x27;t happen */</span>
+		spin_unlock(&amp;bitmap_lock);
+		printk(<span class="hljs-string">&quot;xiafs_new_inode: bit already set\n&quot;</span>);
+		iput(inode);
+		<span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+	}
+	spin_unlock(&amp;bitmap_lock);
+	mark_buffer_dirty(bh);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-56">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-56">&#x00a7;</a>
+              </div>
+              <p><code>j</code> is now the inode number.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	j += i * bits_per_zone;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-57">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-57">&#x00a7;</a>
+              </div>
+              <p>Also a pretty unlikely situation. Check that <code>j</code> didn’t somehow become set to
+zero anywhere in this process and that it’s not larger than the number of
+inodes on the filesystem.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (!j || j &gt; sbi-&gt;s_ninodes) {
+		iput(inode);
+		<span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-58">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-58">&#x00a7;</a>
+              </div>
+              <p>Once execution has reached this point, everything is OK. Fill in the inodes
+fields. This is the only part of <code>bitmap.c</code> that saw any notable changes,
+incidentally. Formerly, we had to set <code>inode-&gt;i_uid</code>, <code>inode-&gt;i_gid</code>,
+<code>inode-&gt;i_mtime</code>, <code>inode-&gt;i_atime</code>, and <code>inode-&gt;i_ctime</code> explicitly. Now,
+though, they get set by helpful kernel helper functions so we don’t (and
+can’t) set them the old way.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	inode_init_owner(&amp;nop_mnt_idmap, inode, dir, mode);
+	inode-&gt;i_ino = j;
+	simple_inode_init_ts(inode);
+	inode-&gt;i_blocks = <span class="hljs-number">0</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-59">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-59">&#x00a7;</a>
+              </div>
+              <p>Zero out the inode’s block pointers.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-built_in">memset</span>(&amp;xiafs_i(inode)-&gt;i_zone, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(xiafs_i(inode)-&gt;i_zone));</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-60">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-60">&#x00a7;</a>
+              </div>
+              <p>Stick the inode in the kernel’s inode hash table and mark it as dirty so it
+gets written.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	insert_inode_hash(inode);
+	mark_inode_dirty(inode);
+
+	*error = <span class="hljs-number">0</span>;
+	<span class="hljs-keyword">return</span> inode;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-61">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-61">&#x00a7;</a>
+              </div>
+              <p>Return the number of free inodes on the filesystem.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-title function_">xiafs_count_free_inodes</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> xiafs_sb_info *sbi)</span>
+{
+	<span class="hljs-keyword">return</span> (sbi-&gt;s_imap_zones &lt;&lt; XIAFS_BITS_PER_Z_BITS(sbi)) - count_used(sbi-&gt;s_imap_buf, sbi-&gt;s_imap_zones, sbi-&gt;s_ninodes + <span class="hljs-number">1</span>);
+}</pre></div></div>
+            
+        </li>
+        
+    </ul>
+  </div>
+</body>
+</html>

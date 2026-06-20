@@ -1,0 +1,2219 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>dir.c</title>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
+  <link rel="stylesheet" media="all" href="docco.css" />
+</head>
+<body>
+  <div id="container">
+    <div id="background"></div>
+    
+      <ul id="jump_to">
+        <li>
+          <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
+          <a class="small" href="javascript:void(0);">+</a>
+          <div id="jump_wrapper">
+          <div id="jump_page_wrapper">
+            <div id="jump_page">
+              
+                
+                <a class="source" href="bitmap.html">
+                  bitmap.c
+                </a>
+              
+                
+                <a class="source" href="dir.html">
+                  dir.c
+                </a>
+              
+                
+                <a class="source" href="file.html">
+                  file.c
+                </a>
+              
+                
+                <a class="source" href="inode.html">
+                  inode.c
+                </a>
+              
+                
+                <a class="source" href="itree.html">
+                  itree.c
+                </a>
+              
+                
+                <a class="source" href="namei.html">
+                  namei.c
+                </a>
+              
+            </div>
+          </div>
+        </li>
+      </ul>
+    
+    <ul class="sections">
+        
+          <li id="title">
+              <div class="annotation">
+                  <h1>dir.c</h1>
+              </div>
+          </li>
+        
+        
+        
+        <li id="section-1">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-1">&#x00a7;</a>
+              </div>
+              <p>Many of the functions in this file are used in <code>namei.c</code>. Interestingly,
+between kernel versions 3.12.1 and 6.15 many of the functions defined here
+were removed because they were replaced by new functions with the same
+functionality in the kernel’s filesystem API.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-comment">/*
+ * Porting work to modern kernels copyright (C) Jeremy Bingham, 2013.
+ * Based on work by Linus Torvalds, Q. Frank Xia, and others as noted.
+ *
+ * This port of Q. Frank Xia&#x27;s xiafs was done using the existing minix
+ * filesystem code, but based on the original xiafs code in pre-2.1.21 or so
+ * kernels.
+ */</span>
+
+<span class="hljs-comment">/*
+ *  linux/fs/xiafs/dir.c
+ *
+ *  Copyright (C) 1991, 1992 Linus Torvalds
+ *
+ *  xiafs directory handling functions
+ *
+ *  Updated to filesystem version 3 by Daniel Aragones
+ */</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;xiafs.h&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/buffer_head.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/highmem.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/swap.h&gt;</span></span>
+
+<span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_direct</span> <span class="hljs-title">xiafs_dirent</span>;</span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_readdir</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file *, <span class="hljs-keyword">struct</span> dir_context *)</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-2">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-2">&#x00a7;</a>
+              </div>
+              <p>Round a number up to the nearest number divisible by 4.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> RNDUP4(x)	((3+(u_long)(x)) &amp; ~3)</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-3">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-3">&#x00a7;</a>
+              </div>
+              <p>Set the function pointers for directory specific file operations. Only one of
+the <code>xiafs_dir_operations</code> is a filesystem specific function:
+<code>xiafs_readdir</code>. The others use generic functions.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">file_operations</span> <span class="hljs-title">xiafs_dir_operations</span> =</span> {
+	.llseek		= generic_file_llseek,
+	.read		= generic_read_dir,
+	.iterate_shared	= xiafs_readdir,
+	.fsync		= generic_file_fsync,
+};</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-4">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-4">&#x00a7;</a>
+              </div>
+              <p>The last byte is either equal to the page size (which is architecture
+dependent, but is 4KB on x86), or if this is the last page the directory is
+using for its dentry list, the inode’s size ANDed with the page size minus
+one. In a completely made up example, if the inode’s size is 8888 bytes and
+<code>page_nr</code> was 2 (meaning that the page being requested is the last one the
+directory is using, since three 4KB pages are needed to hold 8888 bytes), by
+ANDing 8888 with <code>(PAGE_SIZE - 1)</code> we get 696 back as the last used byte on
+that page.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-comment">/*
+ * Return the offset into page `page_nr&#x27; of the last valid
+ * byte in that page, plus one.
+ */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">unsigned</span>
+<span class="hljs-title function_">xiafs_last_byte</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> page_nr)</span>
+{
+	<span class="hljs-type">unsigned</span> last_byte = PAGE_SIZE;
+
+	<span class="hljs-keyword">if</span> (page_nr == (inode-&gt;i_size &gt;&gt; PAGE_SHIFT))
+		last_byte = inode-&gt;i_size &amp; (PAGE_SIZE - <span class="hljs-number">1</span>);
+	<span class="hljs-keyword">return</span> last_byte;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-5">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-5">&#x00a7;</a>
+              </div>
+              <p>Commit the changed directory page.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">dir_commit_chunk</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> folio *folio, <span class="hljs-type">loff_t</span> pos, <span class="hljs-type">unsigned</span> len)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">address_space</span> *<span class="hljs-title">mapping</span> =</span> folio-&gt;mapping;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">inode</span> *<span class="hljs-title">dir</span> =</span> mapping-&gt;host;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-6">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-6">&#x00a7;</a>
+              </div>
+              <p>Commit the change made to this page of memory.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	block_write_end(<span class="hljs-literal">NULL</span>, mapping, pos, len, len, folio, <span class="hljs-literal">NULL</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-7">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-7">&#x00a7;</a>
+              </div>
+              <p>Make the directory bigger, if need be.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (pos+len &gt; dir-&gt;i_size) {
+		i_size_write(dir, pos+len);
+		mark_inode_dirty(dir);
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-8">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-8">&#x00a7;</a>
+              </div>
+              <p>Formerly, there was an if/else statement here to handle writing changes
+immediately or not depending on whether the filesystem had been mounted
+with <code>dirsync</code> or not. Now, though, that check is foisted off to
+<code>xiafs_handle_dirsync</code> so we can do those checks elsewhere without repeating
+ourselves.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-comment">/* write_on_page if (IS_DIRSYNC(dir)) moved apparently. o_O */</span>
+	folio_unlock(folio);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-9">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-9">&#x00a7;</a>
+              </div>
+              <p>As mentioned above, this handles writing out the changes to the directory.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-comment">/* Stealing this from fs/minix/dir.c. Directory handling generally seems to
+ * have been shaken up a bit between 6.1 and 6.15 somewhere along the way.
+ */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_handle_dirsync</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *dir)</span>
+{
+	<span class="hljs-type">int</span> err;
+
+	err = filemap_write_and_wait(dir-&gt;i_mapping);
+	<span class="hljs-keyword">if</span> (!err)
+		err = sync_inode_metadata(dir, <span class="hljs-number">1</span>);
+	<span class="hljs-keyword">return</span> err;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-10">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-10">&#x00a7;</a>
+              </div>
+              <p>Once, we got pages. Now, we get folios of pages. Progress!</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> *<span class="hljs-title function_">dir_get_folio</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *dir, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> n,
+		<span class="hljs-keyword">struct</span> folio **foliop)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">folio</span> *<span class="hljs-title">folio</span> =</span> read_mapping_folio(dir-&gt;i_mapping, n, <span class="hljs-literal">NULL</span>);
+
+	<span class="hljs-keyword">if</span> (IS_ERR(folio))
+		<span class="hljs-keyword">return</span> ERR_CAST(folio);
+	*foliop = folio;
+	<span class="hljs-keyword">return</span> kmap_local_folio(folio, <span class="hljs-number">0</span>);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-11">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-11">&#x00a7;</a>
+              </div>
+              <p>Gets the next dentry in the directory. The xiafs directory entries have
+variable lengths, so the next extry will be <code>d_rec_len</code> bytes after the
+current entry.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> *<span class="hljs-title function_">xiafs_next_entry</span><span class="hljs-params">(<span class="hljs-type">void</span> *de)</span>
+{
+	<span class="hljs-comment">/* make this less gimpy */</span>
+	xiafs_dirent *d = (xiafs_dirent *)de; <span class="hljs-comment">/* not the most efficient way */</span>
+	<span class="hljs-keyword">return</span> (<span class="hljs-type">void</span>*)((<span class="hljs-type">char</span>*)de + d-&gt;d_rec_len);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-12">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-12">&#x00a7;</a>
+              </div>
+              <p>This is where the heavy lifting of reading a directory’s contents happens.
+It’s importand and specific enough that <code>xiafs_readdir</code> is the only function
+pointer in the <code>xiafs_dir_operations</code> struct to use a xiafs-specific
+function.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_readdir</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file * file, <span class="hljs-keyword">struct</span> dir_context *ctx)</span>
+{
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> pos = ctx-&gt;pos;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">inode</span> *<span class="hljs-title">inode</span> =</span> file_inode(file);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-13">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-13">&#x00a7;</a>
+              </div>
+              <p>The number of pages this directory is using to store its list of entries.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> npages = dir_pages(inode);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-14">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-14">&#x00a7;</a>
+              </div>
+              <p><code>chunk_size</code> is very important to the Minix filesystem, since all directory
+entries have the same length. Xiafs has variable length directory entries,
+but since the minimum length for a dentry is 12 this value still has some
+use.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-type">unsigned</span> chunk_size = _XIAFS_DIR_SIZE; <span class="hljs-comment">/* 1st entry is always 12, it seems. */</span>
+	<span class="hljs-type">char</span> *name;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> namelen;
+	__u32 inumber;
+	<span class="hljs-type">unsigned</span> offset;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> n;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-15">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-15">&#x00a7;</a>
+              </div>
+              <p>Set our position in the dentry list.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	ctx-&gt;pos = pos = ALIGN(pos, chunk_size); <span class="hljs-comment">/* (pos + chunk_size-1) &amp; ~(chunk_size-1); */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-16">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-16">&#x00a7;</a>
+              </div>
+              <p>Don’t go off the edge.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (pos &gt;= inode-&gt;i_size)
+		<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-17">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-17">&#x00a7;</a>
+              </div>
+              <p>Calculate the starting offset from the beginning of the directory’s data.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	offset = pos &amp; ~PAGE_MASK;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-18">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-18">&#x00a7;</a>
+              </div>
+              <p>Calculate what page we start on.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	n = pos &gt;&gt; PAGE_SHIFT;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-19">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-19">&#x00a7;</a>
+              </div>
+              <p>Start walking through the pages of memory.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">for</span> ( ; n &lt; npages; n++, offset = <span class="hljs-number">0</span>) {
+		<span class="hljs-type">char</span> *p, *kaddr, *limit;
+		<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">folio</span> *<span class="hljs-title">folio</span>;</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-20">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-20">&#x00a7;</a>
+              </div>
+              <p>Fill the folio and get the address of the page’s data.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		kaddr = dir_get_folio(inode, n, &amp;folio);
+
+		<span class="hljs-keyword">if</span> (IS_ERR(folio))
+			<span class="hljs-keyword">continue</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-21">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-21">&#x00a7;</a>
+              </div>
+              <p>Assuming nothing went wrong, <code>p</code> will be the first dentry on the page.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		p = kaddr+offset;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-22">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-22">&#x00a7;</a>
+              </div>
+              <p>Subtracting <code>chunk_size</code> from <code>xiafs_last_byte</code> keeps it from marching off
+into space.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		limit = kaddr + xiafs_last_byte(inode, n) - chunk_size;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-23">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-23">&#x00a7;</a>
+              </div>
+              <p>While <code>p</code> is less than the limit, get the next directory entry.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">for</span> ( ; p &lt;= limit; p = xiafs_next_entry(p)) {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-24">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-24">&#x00a7;</a>
+              </div>
+              <p>Cast <code>p</code> to be a xiafs dentry.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			xiafs_dirent *de = (xiafs_dirent *)p;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-25">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-25">&#x00a7;</a>
+              </div>
+              <p>A xiafs directory entry’s length should never be less than 12. If it’s 0,
+then something’s wrong with the filesystem.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			<span class="hljs-keyword">if</span> (de-&gt;d_rec_len == <span class="hljs-number">0</span>){
+				printk(<span class="hljs-string">&quot;XIAFS: Zero-length directory entry at (%s %d)\n&quot;</span>, WHERE_ERR);
+				folio_release_kmap(folio, p);
+				<span class="hljs-keyword">return</span> -EIO;
+			}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-26">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-26">&#x00a7;</a>
+              </div>
+              <p>Otherwise, we found something.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			name = de-&gt;d_name;
+			inumber = de-&gt;d_ino;
+			namelen = de-&gt;d_name_len;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-27">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-27">&#x00a7;</a>
+              </div>
+              <p>If this entry has an inode number, add the entry to the list. If it doesn’t
+work, stop trying to read the directory.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			<span class="hljs-keyword">if</span> (inumber) {
+				<span class="hljs-keyword">if</span> (!dir_emit(ctx, name, namelen, inumber, DT_UNKNOWN)){
+					folio_release_kmap(folio, p);
+					<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+				}
+			}
+			<span class="hljs-comment">/* Minix has here:
+			 * ctx-&gt;pos += chunk_size;
+			 * xiafs has variable length directories, though, so we
+			 * want to increase the position by the length of the
+			 * directory entry rather than a fixed chunk size. */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-28">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-28">&#x00a7;</a>
+              </div>
+              <p>Advance the position to the next entry.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			ctx-&gt;pos += de-&gt;d_rec_len;
+		}
+		folio_release_kmap(folio, kaddr);
+	}
+
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-29">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-29">&#x00a7;</a>
+              </div>
+              <p>Check if two filenames match. First, however, it checks to see if the first
+name is shorter than the other and only compares the names if it is not.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">namecompare</span><span class="hljs-params">(<span class="hljs-type">int</span> len, <span class="hljs-type">int</span> maxlen,
+	<span class="hljs-type">const</span> <span class="hljs-type">char</span> * name, <span class="hljs-type">const</span> <span class="hljs-type">char</span> * buffer)</span>
+{
+	<span class="hljs-keyword">if</span> (len &lt; maxlen &amp;&amp; buffer[len])
+		<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+	<span class="hljs-keyword">return</span> !<span class="hljs-built_in">memcmp</span>(name, buffer, len);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-30">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-30">&#x00a7;</a>
+              </div>
+              <p>The comment here explains exactly what this function does.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-comment">/*
+ *	xiafs_find_entry()
+ *
+ * finds an entry in the specified directory with the wanted name. It
+ * returns the cache buffer in which the entry was found, and the entry
+ * itself (as a parameter - res_dir). It does NOT read the inode of the
+ * entry - you&#x27;ll have to do that yourself if you want to.
+ */</span>
+xiafs_dirent *<span class="hljs-title function_">xiafs_find_entry</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> dentry *dentry, <span class="hljs-keyword">struct</span> folio **foliop, <span class="hljs-keyword">struct</span> xiafs_direct **old_de)</span>
+{</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-31">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-31">&#x00a7;</a>
+              </div>
+              <p>Set up the name, length of the name, and inode of the parent directory.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-type">const</span> <span class="hljs-type">char</span> * name = dentry-&gt;d_name.name;
+	<span class="hljs-type">int</span> namelen = dentry-&gt;d_name.len;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">inode</span> * <span class="hljs-title">dir</span> =</span> dentry-&gt;d_parent-&gt;d_inode;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> n;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-32">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-32">&#x00a7;</a>
+              </div>
+              <p>Number of pages the directory is using for its dentry list.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> npages = dir_pages(dir);
+	<span class="hljs-type">char</span> *p;
+
+	<span class="hljs-type">char</span> *namx;
+	__u32 inumber;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-33">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-33">&#x00a7;</a>
+              </div>
+              <p>Walk through the pages of memory.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	<span class="hljs-keyword">for</span> (n = <span class="hljs-number">0</span>; n &lt; npages; n++) {
+		<span class="hljs-type">char</span> *kaddr, *limit;
+		<span class="hljs-type">unsigned</span> <span class="hljs-type">short</span> reclen;
+		xiafs_dirent *de_pre;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-34">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-34">&#x00a7;</a>
+              </div>
+              <p>Set the starting address.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		kaddr = dir_get_folio(dir, n, foliop);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-35">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-35">&#x00a7;</a>
+              </div>
+              <p>If fetching <code>n</code> gave an error, try the next one.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">if</span> (IS_ERR(kaddr))
+			<span class="hljs-keyword">continue</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-36">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-36">&#x00a7;</a>
+              </div>
+              <p>Set the limit to loop over so we don’t go off reading random memory.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>		limit = kaddr + xiafs_last_byte(dir, n) - _XIAFS_DIR_SIZE;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-37">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-37">&#x00a7;</a>
+              </div>
+              <p>Cast <code>kaddr</code> to be a xiafs dentry.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>		de_pre = (xiafs_dirent *)kaddr;
+		<span class="hljs-keyword">for</span> (p = kaddr; p &lt;= limit; p = xiafs_next_entry(p)) {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-38">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-38">&#x00a7;</a>
+              </div>
+              <p>Cast <code>p</code> to be a xiafs dentry.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			xiafs_dirent *de = (xiafs_dirent *)p;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-39">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-39">&#x00a7;</a>
+              </div>
+              <p>If the dentry’s length is 0, something is wrong with the filesystem. Print an
+error and bail.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			<span class="hljs-keyword">if</span> (de-&gt;d_rec_len == <span class="hljs-number">0</span>){
+				printk(<span class="hljs-string">&quot;XIAFS: Zero-length directory entry at (%s %d)\n&quot;</span>, WHERE_ERR);
+				folio_release_kmap(*foliop, kaddr);
+				<span class="hljs-keyword">return</span> ERR_PTR(-EIO);
+			}
+			namx = de-&gt;d_name;
+			inumber = de-&gt;d_ino;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-40">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-40">&#x00a7;</a>
+              </div>
+              <p>If the dentry has no inode, continue on.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			<span class="hljs-keyword">if</span> (!inumber)
+				<span class="hljs-keyword">continue</span>;
+			reclen = de-&gt;d_rec_len;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-41">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-41">&#x00a7;</a>
+              </div>
+              <p>If <code>old_de</code> is not a NULL pointer, set it to the address of the previous
+dentry. If the found entry is to be deleted, the previous dentry needs to
+have its <code>d_rec_len</code> expanded to encompass the deleted entry.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>			<span class="hljs-keyword">if</span>(old_de)
+				*old_de = de_pre;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-42">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-42">&#x00a7;</a>
+              </div>
+              <p>If the names match, we have found what we were looking for. Jump past the
+rest of this function to the end. We jump because we don’t want to release
+the page. It could be rewritten to avoid the goto here, but eh.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			<span class="hljs-keyword">if</span> (namecompare(namelen, _XIAFS_NAME_LEN, name, namx))
+				<span class="hljs-keyword">goto</span> found;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-43">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-43">&#x00a7;</a>
+              </div>
+              <p>If they didn’t match in this iteration, however, set the current dentry to be
+the next dentry’s previous dentry.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			de_pre = de;
+		}
+		folio_release_kmap(*foliop, kaddr);
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-44">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-44">&#x00a7;</a>
+              </div>
+              <p>If it reaches this point, the desired entry was not found.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	<span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+
+found:
+	<span class="hljs-keyword">return</span> (xiafs_dirent *)p;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-45">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-45">&#x00a7;</a>
+              </div>
+              <p>Add a link to an inode in a directory with the given dentry by inserting it
+into the directory’s list of dentries.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_add_link</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> dentry *dentry, <span class="hljs-keyword">struct</span> inode *inode)</span>
+{</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-46">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-46">&#x00a7;</a>
+              </div>
+              <p>The directory to add the link to.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">inode</span> *<span class="hljs-title">dir</span> =</span> dentry-&gt;d_parent-&gt;d_inode;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-47">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-47">&#x00a7;</a>
+              </div>
+              <p>The desired name and name length.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-type">const</span> <span class="hljs-type">char</span> * name = dentry-&gt;d_name.name;
+	<span class="hljs-type">int</span> namelen = dentry-&gt;d_name.len;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">folio</span> *<span class="hljs-title">folio</span> =</span> <span class="hljs-literal">NULL</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-48">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-48">&#x00a7;</a>
+              </div>
+              <p>The number of pages this directory is using.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> npages = dir_pages(dir);
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> n;
+	<span class="hljs-type">char</span> *kaddr, *p;
+	xiafs_dirent *de, *de_pre;
+	<span class="hljs-type">loff_t</span> pos;
+	<span class="hljs-type">int</span> err;
+	<span class="hljs-type">int</span> i;
+	<span class="hljs-type">int</span> rec_size;
+	<span class="hljs-type">char</span> *namx = <span class="hljs-literal">NULL</span>;
+	__u32 inumber;
+
+	<span class="hljs-comment">/*
+	 * We take care of directory expansion in the same loop
+	 * This code plays outside i_size, so it locks the page
+	 * to protect that region.
+	 */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-49">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-49">&#x00a7;</a>
+              </div>
+              <p>Go through the pages looking for a good place to add the link.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">for</span> (n = <span class="hljs-number">0</span>; n &lt;= npages; n++) {
+		<span class="hljs-type">char</span> *limit, *dir_end;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-50">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-50">&#x00a7;</a>
+              </div>
+              <p>Get the folio and set the beginning address. A lot of the code in this
+function is similar to the <code>xiafs_readdir</code> and <code>xiafs_find_entry</code> functions.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		kaddr = dir_get_folio(dir, n, &amp;folio);
+		<span class="hljs-keyword">if</span> (IS_ERR(kaddr))
+			<span class="hljs-keyword">return</span> PTR_ERR(kaddr);
+
+		folio_lock(folio);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-51">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-51">&#x00a7;</a>
+              </div>
+              <p>Set the end of the directory and the limit on this page’s size.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		dir_end = kaddr + xiafs_last_byte(dir, n);
+		limit = kaddr + PAGE_SIZE - _XIAFS_DIR_SIZE;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-52">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-52">&#x00a7;</a>
+              </div>
+              <p>Cast <code>kaddr</code> to be a xiafs directory entry and store it as the previous
+entry for the first round of the <code>for</code> loop.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		de_pre = (xiafs_dirent *)kaddr;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-53">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-53">&#x00a7;</a>
+              </div>
+              <p>Go through this page’s dentries.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">for</span> (p = kaddr; p &lt; limit; p = xiafs_next_entry(p)) {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-54">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-54">&#x00a7;</a>
+              </div>
+              <p>As before, cast <code>p</code> to a xiafs directory entry.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			de = (xiafs_dirent *)p;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-55">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-55">&#x00a7;</a>
+              </div>
+              <p>If the dentry’s record length is 0 and we’re not at the end of the directory,
+bail with an error because something is wrong with the filesystem.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			<span class="hljs-keyword">if</span> (de-&gt;d_rec_len == <span class="hljs-number">0</span> &amp;&amp; p != dir_end){
+				printk(<span class="hljs-string">&quot;XIAFS: Zero-length directory entry at (%s %d)\n&quot;</span>, WHERE_ERR);
+				folio_release_kmap(folio, kaddr);
+				<span class="hljs-keyword">return</span> -EIO;
+			}
+			rec_size = de-&gt;d_rec_len;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-56">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-56">&#x00a7;</a>
+              </div>
+              <p>If we can fit the record for this link in the space of another dentry, great.
+This can happen if a link was deleted earlier and had its length added to the
+previous dentry, or if we’re on the last entry in the list, in which case the
+dentry’s record length exends to the end of the 1024 block. This block size
+mismatch between xiafs expecting 1024 byte blocks and the kernel using 
+(architecture dependent, but on x86 4KB) pages of a potentially different
+size causes some interesting issues.</p>
+<p>Anyway, if we can fit the dentry inside another dentry, set the pointer to
+the previous entry to the current entry, set the current dentry pointer to
+just after the now previous entry, set the current dentry record length equal
+to the previous entry’s former length minus its current length and its inode
+number to 0, and shrink the previous entry’s record length to its new length.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			<span class="hljs-keyword">if</span> (de-&gt;d_ino &amp;&amp; RNDUP4(de-&gt;d_name_len)+RNDUP4(namelen)+<span class="hljs-number">16</span> &lt;= de-&gt;d_rec_len){
+				<span class="hljs-comment">/* We have an entry we can get another one 
+				 * inside of. */</span>
+				i = RNDUP4(de-&gt;d_name_len)+<span class="hljs-number">8</span>;
+				de_pre = de;
+				de = (xiafs_dirent *)(i+(u_char *)de_pre);
+				de-&gt;d_ino = <span class="hljs-number">0</span>;
+				de-&gt;d_rec_len = de_pre-&gt;d_rec_len-i;
+				de_pre-&gt;d_rec_len=i;
+			}
+			namx = de-&gt;d_name;
+			inumber = de-&gt;d_ino;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-57">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-57">&#x00a7;</a>
+              </div>
+              <p>If <code>p == dir_end</code>, we’ve smacked up against the end of the directory. Add
+another 1k bytes to the directory.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			<span class="hljs-keyword">if</span> (p == dir_end) {
+				<span class="hljs-comment">/* We hit i_size */</span>
+				de-&gt;d_ino = <span class="hljs-number">0</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-58">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-58">&#x00a7;</a>
+              </div>
+              <p>In practice, this does not seem to be an issue.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+				<span class="hljs-comment">/* <span class="hljs-doctag">NOTE:</span> need to test what happens when dirsize
+				 * is equal to the page size, or when we go over
+				 * the initial XIAFS_ZSIZE. */</span>
+				rec_size = de-&gt;d_rec_len = XIAFS_ZSIZE(xiafs_sb(dir-&gt;i_sb));
+				<span class="hljs-comment">/* We&#x27;re at the end of the directory, so we
+				 * need to make the new d_rec_len equal to
+				 * XIAFS_ZSIZE */</span>
+				<span class="hljs-keyword">goto</span> got_it;
+			}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-59">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-59">&#x00a7;</a>
+              </div>
+              <p>If it fits, we have what we needed.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			<span class="hljs-keyword">if</span> (!inumber &amp;&amp; RNDUP4(namelen)+ <span class="hljs-number">8</span> &lt;= de-&gt;d_rec_len)
+				<span class="hljs-keyword">goto</span> got_it;
+			err = -EEXIST;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-60">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-60">&#x00a7;</a>
+              </div>
+              <p>Make sure this entry doesn’t have the same name as the one we want to add.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			<span class="hljs-keyword">if</span> (namecompare(namelen, _XIAFS_NAME_LEN, name, namx))
+				<span class="hljs-keyword">goto</span> out_unlock;
+			de_pre = de;
+		}
+		folio_unlock(folio);
+		folio_release_kmap(folio, kaddr);
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-61">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-61">&#x00a7;</a>
+              </div>
+              <p>If it gets here, something went wrong.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	BUG();
+	<span class="hljs-keyword">return</span> -EINVAL;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-62">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-62">&#x00a7;</a>
+              </div>
+              <p>If it’s here, then everything went great. Fill the dentry’s name and inode
+number, commit the chunk of memory, and update the directory’s change and
+modification times.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+got_it:
+	pos = folio_pos(folio) + offset_in_folio(folio, p);
+	err = xiafs_prepare_chunk(folio, pos, rec_size);
+	<span class="hljs-keyword">if</span> (err)
+		<span class="hljs-keyword">goto</span> out_unlock;
+	<span class="hljs-built_in">memcpy</span> (namx, name, namelen);
+	<span class="hljs-comment">/* memset (namx + namelen, 0, de-&gt;d_rec_len - namelen - 7); */</span>
+	de-&gt;d_name[namelen] = <span class="hljs-number">0</span>;
+	de-&gt;d_name_len=namelen;
+	de-&gt;d_ino = inode-&gt;i_ino;
+	dir_commit_chunk(folio, pos, rec_size);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-63">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-63">&#x00a7;</a>
+              </div>
+              <p>Another example of how handling the timestamps is different than it used to
+be.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	inode_set_mtime_to_ts(dir, inode_set_ctime_current(dir));
+	mark_inode_dirty(dir);
+	err = xiafs_handle_dirsync(dir);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-64">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-64">&#x00a7;</a>
+              </div>
+              <p>In normal execution flow, the code proceeds to this point naturally and
+returns. If there was an error, though, it jumps past the all the code that
+follows using a goto to the <code>out_unlock</code> label, where it unlocks the folio
+and then jumps back up to <code>out_put</code>, essentially resuming normal execution.
+It seems odd, but this way it’s able to put the error handling code in a safe
+place that can never be normally reached because of the <code>return err;</code> line.
+By jumping back up to <code>out_put</code>, we don’t have to repeat the call to
+<code>folio_release_kmap</code>. It does feel weird though.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+out_put:
+	folio_release_kmap(folio, kaddr);
+	<span class="hljs-keyword">return</span> err;
+out_unlock:
+	folio_unlock(folio);
+	<span class="hljs-keyword">goto</span> out_put;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-65">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-65">&#x00a7;</a>
+              </div>
+              <p>Standing in opposition to the previous function, this deletes entries from a
+directory.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_delete_entry</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> xiafs_direct *de, <span class="hljs-keyword">struct</span> xiafs_direct *de_pre, <span class="hljs-keyword">struct</span> folio *folio)</span>
+{</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-66">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-66">&#x00a7;</a>
+              </div>
+              <p>Get the dentry’s inode.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">inode</span> *<span class="hljs-title">inode</span> =</span> folio-&gt;mapping-&gt;host;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-67">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-67">&#x00a7;</a>
+              </div>
+              <p>Get the dentry’s position in the folio.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-type">loff_t</span> pos = folio_pos(folio) + offset_in_folio(folio, de);
+	<span class="hljs-type">loff_t</span> tmp_pos;
+	<span class="hljs-type">unsigned</span> len = de-&gt;d_rec_len;
+	<span class="hljs-type">int</span> err;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-68">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-68">&#x00a7;</a>
+              </div>
+              <p>Lock the folio to keep someone from changing it from under us.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	folio_lock(folio);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-69">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-69">&#x00a7;</a>
+              </div>
+              <p>If the entry and the previous entry are the same, life is a lot simpler. Just
+clear the dentry’s inode number.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">if</span> (de == de_pre){
+		de-&gt;d_ino = <span class="hljs-number">0</span>;
+	} <span class="hljs-keyword">else</span> {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-70">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-70">&#x00a7;</a>
+              </div>
+              <p>Otherwise, we have to extend the previous entry (<code>de_pre</code>) to cover the space
+used by the dentry to be deleted.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-comment">/* Join the previous entry with this one. */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-71">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-71">&#x00a7;</a>
+              </div>
+              <p>Move <code>de_pre</code> up the chain, if necessary.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">while</span> (de_pre-&gt;d_rec_len + (u_char *)de_pre &lt; (u_char *)de){</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-72">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-72">&#x00a7;</a>
+              </div>
+              <p>Bail on a bad directory, if one is found.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			<span class="hljs-keyword">if</span> (de_pre-&gt;d_rec_len &lt; _XIAFS_DIR_SIZE){
+				printk(<span class="hljs-string">&quot;XIA-FS: bad directory entry (%s %d)\n&quot;</span>, WHERE_ERR);
+				folio_unlock(folio);
+				<span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+			}
+			de_pre=(<span class="hljs-keyword">struct</span> xiafs_direct *)(de_pre-&gt;d_rec_len + (u_char *)de_pre);
+		}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-73">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-73">&#x00a7;</a>
+              </div>
+              <p>If <code>de_pre</code> extends past the directory entry we’re deleting, something is
+very wrong.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">if</span> (de_pre-&gt;d_rec_len + (u_char *)de_pre &gt; (u_char *)de){
+			printk(<span class="hljs-string">&quot;XIA-FS: bad directory entry (%s %d)\n&quot;</span>, WHERE_ERR);
+			<span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+			}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-74">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-74">&#x00a7;</a>
+              </div>
+              <p>As this comment says, don’t extend <code>de_pre</code> to cover the deleted entry if it
+would make <code>de_pre-&gt;d_rec_len</code> be greater than <code>XIAFS_ZSIZE</code>. If that is the
+case, just set the deleted entry’s inode to 0. It may be able to be used
+later.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-comment">/* d_rec_len can only be XIAFS_ZSIZE at most. Don&#x27;t join them
+		 * together if they&#x27;d go over */</span>
+		tmp_pos = folio_pos(folio) + offset_in_folio(folio, de_pre);
+		<span class="hljs-keyword">if</span> (((tmp_pos &amp; (XIAFS_ZSIZE(xiafs_sb(inode-&gt;i_sb)) - <span class="hljs-number">1</span>)) + de_pre-&gt;d_rec_len + de-&gt;d_rec_len) &lt;= XIAFS_ZSIZE(xiafs_sb(inode-&gt;i_sb))){
+			de_pre-&gt;d_rec_len += de-&gt;d_rec_len;
+			len = de_pre-&gt;d_rec_len;
+			pos = tmp_pos;
+		} <span class="hljs-keyword">else</span> {
+			<span class="hljs-comment">/* If it would go over, just set d_ino to 0 */</span>
+			de-&gt;d_ino = <span class="hljs-number">0</span>;
+		}
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-75">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-75">&#x00a7;</a>
+              </div>
+              <p>Prepare and commit the change.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	err = xiafs_prepare_chunk(folio, pos, len);
+	<span class="hljs-keyword">if</span> (err) {
+		folio_unlock(folio);
+		<span class="hljs-keyword">return</span> err;
+	}
+
+	dir_commit_chunk(folio, pos, len);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-76">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-76">&#x00a7;</a>
+              </div>
+              <p>Update the inode’s change and modification times and mark it dirty.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	inode_set_mtime_to_ts(inode, inode_set_ctime_current(inode));
+	mark_inode_dirty(inode);
+
+	<span class="hljs-keyword">return</span> xiafs_handle_dirsync(inode);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-77">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-77">&#x00a7;</a>
+              </div>
+              <p>Make an empty directory.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_make_empty</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode, <span class="hljs-keyword">struct</span> inode *dir)</span>
+{</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-78">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-78">&#x00a7;</a>
+              </div>
+              <p>Get the folio.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">folio</span> *<span class="hljs-title">folio</span> =</span> filemap_grab_folio(inode-&gt;i_mapping, <span class="hljs-number">0</span>);
+	<span class="hljs-type">char</span> *kaddr;
+	<span class="hljs-type">int</span> err;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-79">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-79">&#x00a7;</a>
+              </div>
+              <p>A brand new directory always gets <code>XIAFS_ZSIZE</code> bytes, which as mentioned
+before always ends up being 1024 bytes.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> zsize = XIAFS_ZSIZE(xiafs_sb(dir-&gt;i_sb));
+	xiafs_dirent *de;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-80">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-80">&#x00a7;</a>
+              </div>
+              <p>If we didn’t get the folio we have to bail.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	<span class="hljs-keyword">if</span> (IS_ERR(folio))
+		<span class="hljs-keyword">return</span> PTR_ERR(folio);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-81">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-81">&#x00a7;</a>
+              </div>
+              <p>Prepare the page, bombing out if it doesn’t work.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	err = xiafs_prepare_chunk(folio, <span class="hljs-number">0</span>, zsize);
+	<span class="hljs-keyword">if</span> (err) {
+		folio_unlock(folio);
+		<span class="hljs-keyword">goto</span> fail;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-82">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-82">&#x00a7;</a>
+              </div>
+              <p>Get the page’s address.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	kaddr = kmap_local_folio(folio, <span class="hljs-number">0</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-83">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-83">&#x00a7;</a>
+              </div>
+              <p>Zero out the page’s data.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	<span class="hljs-built_in">memset</span>(kaddr, <span class="hljs-number">0</span>, folio_size(folio));</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-84">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-84">&#x00a7;</a>
+              </div>
+              <p>Cast that address to a directory entry.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	de = (xiafs_dirent *)kaddr;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-85">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-85">&#x00a7;</a>
+              </div>
+              <p>Make the <code>.</code> and <code>..</code> entries that every directory has.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	de-&gt;d_ino = inode-&gt;i_ino;
+	<span class="hljs-built_in">strcpy</span>(de-&gt;d_name, <span class="hljs-string">&quot;.&quot;</span>);
+	de-&gt;d_name_len = <span class="hljs-number">1</span>;
+	de-&gt;d_rec_len = <span class="hljs-number">12</span>;
+	de = xiafs_next_entry(de);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-86">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-86">&#x00a7;</a>
+              </div>
+              <p><code>..</code>, of course, refers to the parent directory and shares the same inode.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	de-&gt;d_ino = dir-&gt;i_ino;
+	<span class="hljs-built_in">strcpy</span>(de-&gt;d_name, <span class="hljs-string">&quot;..&quot;</span>);
+	de-&gt;d_name_len = <span class="hljs-number">2</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-87">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-87">&#x00a7;</a>
+              </div>
+              <p><code>..</code>‘s record length extends to the end of the 1k block, except for the
+space used by <code>.</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	de-&gt;d_rec_len = zsize - <span class="hljs-number">12</span>;
+	kunmap_local(kaddr);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-88">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-88">&#x00a7;</a>
+              </div>
+              <p>Commit and return.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	dir_commit_chunk(folio, <span class="hljs-number">0</span>, zsize);
+	err = xiafs_handle_dirsync(inode);
+fail:
+	folio_put(folio);
+	<span class="hljs-keyword">return</span> err;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-89">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-89">&#x00a7;</a>
+              </div>
+              <p>As the comment here indicates, check to see that the specified directory is
+empty.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-comment">/*
+ * routine to check that the specified directory is empty (for rmdir)
+ */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_empty_dir</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode * inode)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">folio</span> *<span class="hljs-title">folio</span> =</span> <span class="hljs-literal">NULL</span>;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> i, npages = dir_pages(inode);
+	<span class="hljs-type">char</span> *name, *kaddr;
+	__u32 inumber;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-90">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-90">&#x00a7;</a>
+              </div>
+              <p>This rodeo’s going to feel awfully familiar. It’s the same general process
+for walking through the directory’s pages of memory that’s in may of the
+other functions in this file.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; npages; i++) {
+		<span class="hljs-type">char</span> *p, *limit;
+
+		kaddr = dir_get_folio(inode, i, &amp;folio);
+		<span class="hljs-keyword">if</span> (IS_ERR(kaddr))
+			<span class="hljs-keyword">continue</span>;
+
+		limit = kaddr + xiafs_last_byte(inode, i) - _XIAFS_DIR_SIZE;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-91">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-91">&#x00a7;</a>
+              </div>
+              <p>Loop over each dentry in the page.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		<span class="hljs-keyword">for</span> (p = kaddr; p &lt;= limit; p = xiafs_next_entry(p)) {
+			xiafs_dirent *de = (xiafs_dirent *)p;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-92">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-92">&#x00a7;</a>
+              </div>
+              <p>Even before checking the inode number, check to see if the entry is so messed
+up that <code>d_rec_len</code> is 0.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+			<span class="hljs-keyword">if</span> (de-&gt;d_rec_len == <span class="hljs-number">0</span>){
+				printk(<span class="hljs-string">&quot;XIAFS: Zero-length directory entry at (%s %d)\n&quot;</span>, WHERE_ERR);
+				folio_release_kmap(folio, kaddr);
+				<span class="hljs-keyword">return</span> -EIO;
+			}
+			name = de-&gt;d_name;
+			inumber = de-&gt;d_ino;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-93">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-93">&#x00a7;</a>
+              </div>
+              <p>If the inode number is 0, that means for our purposes the entry doesn’t
+exist. There are some situation where an entry has been deleted, but the
+previous entry couldn’t be extended to cover that entry’s space in the dentry
+list. If the inode number <em>isn’t</em> zero, though, it needs to be checked for
+being anything other than <code>.</code> and <code>..</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>			<span class="hljs-keyword">if</span> (inumber != <span class="hljs-number">0</span>) {
+				<span class="hljs-comment">/* check for . and .. */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-94">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-94">&#x00a7;</a>
+              </div>
+              <p>Obviously, if the first character in the name isn’t <code>.</code>, it isn’t <code>.</code> or
+<code>..</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>				<span class="hljs-keyword">if</span> (name[<span class="hljs-number">0</span>] != <span class="hljs-string">&#x27;.&#x27;</span>)
+					<span class="hljs-keyword">goto</span> not_empty;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-95">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-95">&#x00a7;</a>
+              </div>
+              <p>This would be a weird condition to satisfy, if the entry’s name is <code>.</code> but
+the inode number of the entry wasn’t the directory’s inode. Still, this
+condition gets checked.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>				<span class="hljs-keyword">if</span> (!name[<span class="hljs-number">1</span>]) {
+					<span class="hljs-keyword">if</span> (inumber != inode-&gt;i_ino)
+						<span class="hljs-keyword">goto</span> not_empty;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-96">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-96">&#x00a7;</a>
+              </div>
+              <p>If it’s not <code>..</code> it’s not empty.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>				} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (name[<span class="hljs-number">1</span>] != <span class="hljs-string">&#x27;.&#x27;</span>)
+					<span class="hljs-keyword">goto</span> not_empty;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-97">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-97">&#x00a7;</a>
+              </div>
+              <p>If there’s a third character of any sort, it’s obviously neither <code>.</code> nor
+<code>..</code>.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>				<span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (name[<span class="hljs-number">2</span>])
+					<span class="hljs-keyword">goto</span> not_empty;
+			}
+		}
+		folio_release_kmap(folio, kaddr);
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-98">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-98">&#x00a7;</a>
+              </div>
+              <p>The directory turned out to be empty.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-99">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-99">&#x00a7;</a>
+              </div>
+              <p>If the directory wasn’t empty, it jumps here with a goto, releases the folio,
+and returns false.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+not_empty:
+	folio_release_kmap(folio, kaddr);
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-100">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-100">&#x00a7;</a>
+              </div>
+              <p>This is only called by <code>xiafs_rename</code> in <code>namei.c</code>. As the name implies, it
+sets the link for the entry and inode.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-comment">/* Releases the page */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">xiafs_set_link</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> xiafs_direct *de, <span class="hljs-keyword">struct</span> folio *folio,
+	<span class="hljs-keyword">struct</span> inode *inode)</span>
+{</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-101">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-101">&#x00a7;</a>
+              </div>
+              <p>Get the directory the entry’s being added to.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">inode</span> *<span class="hljs-title">dir</span> =</span> folio-&gt;mapping-&gt;host;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-102">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-102">&#x00a7;</a>
+              </div>
+              <p>Get the position on the page.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	<span class="hljs-type">loff_t</span> pos = folio_pos(folio) + offset_in_folio(folio, de);
+	<span class="hljs-type">int</span> err;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-103">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-103">&#x00a7;</a>
+              </div>
+              <p>Lock the folio and prepare the chunk for writing.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	folio_lock(folio);
+
+	err = xiafs_prepare_chunk(folio, pos, de-&gt;d_rec_len);
+	<span class="hljs-keyword">if</span> (err) {
+		folio_unlock(folio);
+		<span class="hljs-keyword">return</span> err;
+	}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-104">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-104">&#x00a7;</a>
+              </div>
+              <p>If all went well, set the inode number and commit the chunk.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>	de-&gt;d_ino = inode-&gt;i_ino;
+	dir_commit_chunk(folio, pos, de-&gt;d_rec_len);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-105">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-105">&#x00a7;</a>
+              </div>
+              <p>Release the page, set modified and change times on the host directory, and
+mark the directory as dirty.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+	inode_set_mtime_to_ts(dir, inode_set_ctime_current(dir));
+	mark_inode_dirty(dir);
+	<span class="hljs-keyword">return</span> xiafs_handle_dirsync(dir);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-106">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-106">&#x00a7;</a>
+              </div>
+              <p>Get the parent directory of this inode.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-keyword">struct</span> xiafs_direct * <span class="hljs-title function_">xiafs_dotdot</span> <span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *dir, <span class="hljs-keyword">struct</span> folio **foliop)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_direct</span> *<span class="hljs-title">de</span> =</span> dir_get_folio(dir, <span class="hljs-number">0</span>, foliop);
+
+	<span class="hljs-keyword">if</span> (!IS_ERR(de)) {</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-107">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-107">&#x00a7;</a>
+              </div>
+              <p><code>..</code> is always the second entry in the list. Return that directly.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+		 <span class="hljs-keyword">return</span> xiafs_next_entry(de);
+	}
+	<span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-108">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-108">&#x00a7;</a>
+              </div>
+              <p>Wrapper function around <code>xiafs_find_entry</code> that returns the inode number for
+the given directory entry.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-type">ino_t</span> <span class="hljs-title function_">xiafs_inode_by_name</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> dentry *dentry)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">folio</span> *<span class="hljs-title">folio</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xiafs_direct</span> *<span class="hljs-title">de</span> =</span> xiafs_find_entry(dentry, &amp;folio, <span class="hljs-literal">NULL</span>);
+	<span class="hljs-type">ino_t</span> res = <span class="hljs-number">0</span>;
+
+	<span class="hljs-keyword">if</span> (de) {
+		res = de-&gt;d_ino;
+		folio_release_kmap(folio, de);
+	}
+	<span class="hljs-keyword">return</span> res;
+}</pre></div></div>
+            
+        </li>
+        
+    </ul>
+  </div>
+</body>
+</html>

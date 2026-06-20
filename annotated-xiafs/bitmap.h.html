@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>bitmap.h</title>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
+  <link rel="stylesheet" media="all" href="docco.css" />
+</head>
+<body>
+  <div id="container">
+    <div id="background"></div>
+    
+      <ul id="jump_to">
+        <li>
+          <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
+          <a class="small" href="javascript:void(0);">+</a>
+          <div id="jump_wrapper">
+          <div id="jump_page_wrapper">
+            <div id="jump_page">
+              
+                
+                <a class="source" href="bitmap.html">
+                  bitmap.h
+                </a>
+              
+                
+                <a class="source" href="xiafs.html">
+                  xiafs.h
+                </a>
+              
+            </div>
+          </div>
+        </li>
+      </ul>
+    
+    <ul class="sections">
+        
+          <li id="title">
+              <div class="annotation">
+                  <h1>bitmap.h</h1>
+              </div>
+          </li>
+        
+        
+        
+        <li id="section-1">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-1">&#x00a7;</a>
+              </div>
+              
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-comment">/*
+ * bitmap.h
+ * 
+ * bit flipping definitions adapted from linux-3.8.8&#x27;s fs/minix/minix.h to 
+ * replace functions that were available more generally in 2.6.32.
+ *
+ */</span>
+
+
+<span class="hljs-comment">/* Taking a page from ext2, at least for now, use little endian bitmaps. Native
+ * byte ordering may come later. */</span></pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-2">
+            <div class="annotation">
+              
+              <div class="sswrap ">
+                <a class="ss" href="#section-2">&#x00a7;</a>
+              </div>
+              <p>As the comments in this file indicate, these are just definitions for setting
+and testing bits in bitmap.c. In the 2.6.32 version of the xiafs port it was
+able to use the minix versions of these, but those went away somewhere
+between 2.6.32 and 3.2. <strong>N.B.</strong> This remains unchanged since the annotations
+for the 3.12.1 kernel version of the xiafs module.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> xiafs_test_and_set_bit	__test_and_set_bit_le</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> xiafs_set_bit		__set_bit_le</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> xiafs_test_and_clear_bit	__test_and_clear_bit_le</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> xiafs_test_bit	test_bit_le</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> xiafs_find_first_zero_bit	find_first_zero_bit_le</span></pre></div></div>
+            
+        </li>
+        
+    </ul>
+  </div>
+</body>
+</html>
