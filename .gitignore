@@ -39,3 +39,5 @@ xfsck
 # patch mishaps
 *.rej
 *.orig
+
+.sw?
