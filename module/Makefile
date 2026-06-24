@@ -4,4 +4,4 @@
 
 obj-m += xiafs.o
 
-xiafs-objs := bitmap.o itree.o namei.o inode.o file.o dir.o
+xiafs-objs := bitmap.o itree.o namei.o inode.o file.o dir.o iomap.o
