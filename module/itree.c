@@ -10,15 +10,6 @@
 #include <linux/buffer_head.h>
 #include "xiafs.h"
 
-enum {DIRECT = 8, DEPTH = 3};
-
-typedef u32 block_t;	/* 32 bit, host order */
-
-static inline unsigned long block_to_cpu(block_t n)
-{
-	return n;
-}
-
 static inline block_t cpu_to_block(unsigned long n)
 {
 	return n;
@@ -29,7 +20,7 @@ static inline block_t *i_data(struct inode *inode)
 	return (block_t *)xiafs_i(inode)->i_zone;
 }
 
-static int block_to_path(struct inode * inode, long block, int offsets[DEPTH])
+int block_to_path(struct inode * inode, long block, int offsets[DEPTH])
 {
 	int n = 0;
 	struct super_block *sb = inode->i_sb;
@@ -72,12 +63,6 @@ static int block_to_path(struct inode * inode, long block, int offsets[DEPTH])
 
 /* Generic part */
 
-typedef struct {
-	block_t	*p;
-	block_t	key;
-	struct buffer_head *bh;
-} Indirect;
-
 static DEFINE_RWLOCK(pointers_lock);
 
 static inline void add_chain(Indirect *p, struct buffer_head *bh, block_t *v)
@@ -98,7 +83,7 @@ static inline block_t *block_end(struct buffer_head *bh)
 	return (block_t *)((char*)bh->b_data + bh->b_size);
 }
 
-static inline Indirect *get_branch(struct inode *inode,
+inline Indirect *get_branch(struct inode *inode,
 					int depth,
 					int *offsets,
 					Indirect chain[DEPTH],
@@ -138,7 +123,7 @@ no_block:
 	return p;
 }
 
-static int alloc_branch(struct inode *inode,
+int alloc_branch(struct inode *inode,
 			     int num,
 			     int *offsets,
 			     Indirect *branch)
@@ -177,7 +162,7 @@ static int alloc_branch(struct inode *inode,
 	return -ENOSPC;
 }
 
-static inline int splice_branch(struct inode *inode,
+int splice_branch(struct inode *inode,
 				     Indirect chain[DEPTH],
 				     Indirect *where,
 				     int num)
