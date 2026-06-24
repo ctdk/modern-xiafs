@@ -21,6 +21,7 @@
  */
 
 #include <linux/fs.h>
+#include <linux/iomap.h>
 
 #define _XIAFS_SUPER_MAGIC 0x012FD16D
 #define _XIAFS_ROOT_INO 1
@@ -33,6 +34,16 @@
 #define _XIAFS_NAME_LEN 248
 
 #define _XIAFS_INODES_PER_BLOCK ((BLOCK_SIZE)/(sizeof(struct xiafs_inode)))
+
+/* These used to live in itree.c, but now it's needed in more than one place */
+enum {DIRECT = 8, DEPTH = 3};
+/* TODO: these probably don't need to be a special typedefs anymore. */
+typedef u32 block_t;	/* 32 bit, host order */
+typedef struct {
+	block_t	*p;
+	block_t	key;
+	struct buffer_head *bh;
+} Indirect;
 
 struct xiafs_inode {		/* 64 bytes */
     __u16   i_mode;
@@ -166,6 +177,12 @@ static inline struct xiafs_inode_info *xiafs_i(struct inode *inode)
         return list_entry(inode, struct xiafs_inode_info, vfs_inode);
 }
 
+/* moved from itree.c since it's also used by iomap.c */
+static inline unsigned long block_to_cpu(block_t n)
+{
+	return n;
+}
+
 /* be able to dump out data */
 #define PRINT_OPAQUE_DATA(p)  print_mem((p), sizeof(*(p)))
 static inline void print_mem(void const *vp, size_t n){
@@ -209,6 +226,17 @@ extern void xiafs_free_block(struct inode * inode, unsigned long block);
 extern int xiafs_get_block(struct inode * inode, sector_t block, struct buffer_head *bh_result, int create);
 extern struct xiafs_inode * xiafs_raw_inode(struct super_block *sb, ino_t ino, struct buffer_head **bh);
 extern unsigned xiafs_blocks(loff_t size, struct super_block *sb);
+
+/* Formerly static functions from itree.c that are now used in more than one
+ * place.
+ */
+extern int block_to_path(struct inode * inode, long block, int offsets[DEPTH]);
+extern inline Indirect *get_branch(struct inode *inode, int depth, int *offsets, Indirect chain[DEPTH], int *err);
+extern int alloc_branch(struct inode *inode, int num, int *offsets, Indirect *branch);
+extern int splice_branch(struct inode *inode, Indirect chain[DEPTH], Indirect *where, int num);
+extern const struct iomap_ops xiafs_iomap_ops;
+
+extern int xiafs_iomap_begin(struct inode *inode, loff_t offset, loff_t length, unsigned flags, struct iomap *iomap, struct iomap *srcmap);
 
 #endif /* __KERNEL__ */
 
