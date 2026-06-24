@@ -51,7 +51,7 @@ against:
 6.1.140-debian
 6.12
 6.15
-7.1-rc6
+7.1-rc6 (unsurprisingly, this also supports 7.1)
 ```
 
 As noted below, some versions of the module are have been built and tested against other versions of the kernel. The module may work with other kernels, but that is uncertain.
