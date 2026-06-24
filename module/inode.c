@@ -29,6 +29,7 @@
 #include <linux/vfs.h>
 #include <linux/writeback.h>
 #include <linux/fs_context.h>
+#include <linux/iomap.h>
 
 static int xiafs_write_inode(struct inode * inode, struct writeback_control *wbc);
 static int xiafs_statfs(struct dentry *dentry, struct kstatfs *buf);
@@ -267,21 +268,64 @@ static int xiafs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	return 0;
 }
 
+static ssize_t xiafs_writeback_range(struct iomap_writepage_ctx *wpc,
+	struct folio *folio, u64 pos, unsigned int len, u64 end_pos)
+{
+	if (pos < wpc->iomap.offset ||
+		pos >= wpc->iomap.offset + wpc->iomap.length) {
+		int error = xiafs_iomap_begin(wpc->inode, pos, len, 0,
+			&wpc->iomap, NULL);
+		if (error)
+			return error;
+	}
+
+	return iomap_add_to_ioend(wpc, folio, pos, end_pos, len);
+}
+
+static const struct iomap_writeback_ops xiafs_writeback_ops = {
+	.writeback_range = xiafs_writeback_range,
+	.writeback_submit = iomap_ioend_writeback_submit,
+};
+
 static int xiafs_writepages(struct address_space *mapping, struct writeback_control *wbc)
+{
+	struct iomap_writepage_ctx wpc = {
+		.inode = mapping->host,
+		.wbc = wbc,
+		.ops = &xiafs_writeback_ops
+	};
+	return iomap_writepages(&wpc);
+}
+
+static int xiafs_block_writepages(struct address_space *mapping, struct writeback_control *wbc)
 {
 	return mpage_writepages(mapping, wbc, xiafs_get_block);
 }
 
 static int xiafs_read_folio(struct file *file, struct folio *folio)
 {
+	/* It still seems like reading a folio ought to be able to fail, but
+	 * these newfangled iomap folio reading functions all seem to return
+	 * void. *shrug*
+	 */
+	iomap_bio_read_folio(folio, &xiafs_iomap_ops);
+	return 0;
+}
+
+/* bring back the old xiafs_read_folio behavior for directories, possibly
+ * temporary, possibly indefinitely.
+ */
+static int xiafs_block_read_folio(struct file *file, struct folio *folio)
+{
 	return block_read_full_folio(folio, xiafs_get_block);
 }
 
-int xiafs_prepare_chunk(struct folio *folio, loff_t pos, unsigned len)
+static void xiafs_readahead(struct readahead_control *rac)
 {
-	return __block_write_begin(folio, pos, len, xiafs_get_block);
+	iomap_bio_readahead(rac, &xiafs_iomap_ops);
 }
 
+/* bringing this back for directory operations, at least for the time being */
 static int xiafs_write_begin(const struct kiocb *iocb, struct address_space *mapping,
 			loff_t pos, unsigned len,
 			struct folio **foliop, void **fsdata)
@@ -300,21 +344,40 @@ static int xiafs_write_begin(const struct kiocb *iocb, struct address_space *map
 	return ret;
 }
 
+int xiafs_prepare_chunk(struct folio *folio, loff_t pos, unsigned len)
+{
+	return __block_write_begin(folio, pos, len, xiafs_get_block);
+}
+
 static sector_t xiafs_bmap(struct address_space *mapping, sector_t block)
 {
-	return generic_block_bmap(mapping,block,xiafs_get_block);
+	return iomap_bmap(mapping, block, &xiafs_iomap_ops);
 }
 
 static const struct address_space_operations xiafs_aops = {
-	.dirty_folio	= block_dirty_folio,
-	.invalidate_folio = block_invalidate_folio,
 	.read_folio = xiafs_read_folio,
+	.readahead = xiafs_readahead,
+	.dirty_folio	= iomap_dirty_folio,
+	.invalidate_folio = iomap_invalidate_folio,
 	.writepages = xiafs_writepages,
+	.migrate_folio = filemap_migrate_folio,
+	.bmap = xiafs_bmap,
+	.is_partially_uptodate = iomap_is_partially_uptodate,
+	.release_folio = iomap_release_folio,
+	.error_remove_folio = generic_error_remove_folio,
+};
+
+/* A special aops for directories that keeps using the buffer head chunks, at
+ * least for now. */
+static const struct address_space_operations xiafs_dir_aops = {
+	.dirty_folio = block_dirty_folio,
+	.invalidate_folio = block_invalidate_folio,
+	.read_folio = xiafs_block_read_folio,
 	.write_begin = xiafs_write_begin,
 	.write_end = generic_write_end,
 	.migrate_folio = buffer_migrate_folio,
 	.bmap = xiafs_bmap,
-	.direct_IO = noop_direct_IO
+	.writepages = xiafs_block_writepages,
 };
 
 static const struct inode_operations xiafs_symlink_inode_operations = {
@@ -331,7 +394,7 @@ void xiafs_set_inode(struct inode *inode, dev_t rdev)
 	} else if (S_ISDIR(inode->i_mode)) {
 		inode->i_op = &xiafs_dir_inode_operations;
 		inode->i_fop = &xiafs_dir_operations;
-		inode->i_mapping->a_ops = &xiafs_aops;
+		inode->i_mapping->a_ops = &xiafs_dir_aops;
 	} else if (S_ISLNK(inode->i_mode)) {
 		inode->i_op = &xiafs_symlink_inode_operations;
 		inode_nohighmem(inode);
