@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Porting work to modern kernels copyright (C) Jeremy Bingham, 2013.
  * Based on work by Linus Torvalds, Q. Frank Xia, and others as noted.

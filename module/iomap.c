@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * iomap functions for xiafs. Even though it's stuck in the past, Xiafs is
  * moving towards the future!

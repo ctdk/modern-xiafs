@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 #ifndef _XIAFS_H
 #define _XIAFS_H
 
