@@ -30,7 +30,6 @@
 #include <linux/vfs.h>
 #include <linux/writeback.h>
 #include <linux/fs_context.h>
-#include <linux/iomap.h>
 
 static int xiafs_write_inode(struct inode * inode, struct writeback_control *wbc);
 static int xiafs_statfs(struct dentry *dentry, struct kstatfs *buf);

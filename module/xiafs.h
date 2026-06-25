@@ -36,8 +36,6 @@
 
 #define _XIAFS_INODES_PER_BLOCK ((BLOCK_SIZE)/(sizeof(struct xiafs_inode)))
 
-/* These used to live in itree.c, but now it's needed in more than one place */
-enum {DIRECT = 8, DEPTH = 3};
 /* TODO: these probably don't need to be a special typedefs anymore. */
 typedef u32 block_t;	/* 32 bit, host order */
 typedef struct {
@@ -231,10 +229,10 @@ extern unsigned xiafs_blocks(loff_t size, struct super_block *sb);
 /* Formerly static functions from itree.c that are now used in more than one
  * place.
  */
-extern int block_to_path(struct inode * inode, long block, int offsets[DEPTH]);
-extern inline Indirect *get_branch(struct inode *inode, int depth, int *offsets, Indirect chain[DEPTH], int *err);
+extern int block_to_path(struct inode * inode, long block, int *offsets);
+extern inline Indirect *get_branch(struct inode *inode, int depth, int *offsets, Indirect *chain, int *err);
 extern int alloc_branch(struct inode *inode, int num, int *offsets, Indirect *branch);
-extern int splice_branch(struct inode *inode, Indirect chain[DEPTH], Indirect *where, int num);
+extern int splice_branch(struct inode *inode, Indirect *chain, Indirect *where, int num);
 extern const struct iomap_ops xiafs_iomap_ops;
 
 extern int xiafs_iomap_begin(struct inode *inode, loff_t offset, loff_t length, unsigned flags, struct iomap *iomap, struct iomap *srcmap);

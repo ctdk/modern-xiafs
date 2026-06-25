@@ -5,9 +5,11 @@
  *
  */
 
-#include <linux/iomap.h>
 #include <linux/buffer_head.h>
 #include "xiafs.h"
+
+/* DEPTH = 3; direct, indirect, doubly indirect */
+#define DEPTH 3
 
 /*
  * xiafs_iomap_begin - map a file range to disk blocks. It acts as a replacment
@@ -24,7 +26,7 @@ int xiafs_iomap_begin(struct inode *inode, loff_t offset, loff_t length,
 	int create = flags & IOMAP_WRITE;
 
 	/* Mostly yoinking from itree.c get_block */
-	int offsets[DEPTH]; /* DEPTH = 3; direct, indirect, doubly indirect */
+	int offsets[DEPTH];
 	Indirect chain[DEPTH];
 	Indirect *partial;
 	int depth = block_to_path(inode, iblock, offsets);

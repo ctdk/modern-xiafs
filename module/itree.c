@@ -11,6 +11,8 @@
 #include <linux/buffer_head.h>
 #include "xiafs.h"
 
+enum {DIRECT = 8, DEPTH = 3};
+
 static inline block_t cpu_to_block(unsigned long n)
 {
 	return n;
@@ -21,7 +23,8 @@ static inline block_t *i_data(struct inode *inode)
 	return (block_t *)xiafs_i(inode)->i_zone;
 }
 
-int block_to_path(struct inode * inode, long block, int offsets[DEPTH])
+/* offsets has DEPTH elements */
+int block_to_path(struct inode * inode, long block, int *offsets)
 {
 	int n = 0;
 	struct super_block *sb = inode->i_sb;
@@ -84,10 +87,11 @@ static inline block_t *block_end(struct buffer_head *bh)
 	return (block_t *)((char*)bh->b_data + bh->b_size);
 }
 
+/* chain has DEPTH elements */
 inline Indirect *get_branch(struct inode *inode,
 					int depth,
 					int *offsets,
-					Indirect chain[DEPTH],
+					Indirect *chain,
 					int *err)
 {
 	struct super_block *sb = inode->i_sb;
@@ -163,8 +167,9 @@ int alloc_branch(struct inode *inode,
 	return -ENOSPC;
 }
 
+/* chain has DEPTH elements */
 int splice_branch(struct inode *inode,
-				     Indirect chain[DEPTH],
+				     Indirect *chain,
 				     Indirect *where,
 				     int num)
 {

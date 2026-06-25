@@ -19,7 +19,6 @@
 #include <linux/buffer_head.h>
 #include "xiafs.h"
 #include <linux/pagemap.h>
-#include <linux/iomap.h>
 
 int xiafs_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 {
