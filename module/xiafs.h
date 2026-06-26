@@ -212,7 +212,9 @@ extern int xiafs_empty_dir(struct inode*);
 extern void xiafs_truncate(struct inode *);
 extern struct inode * xiafs_iget(struct super_block *, unsigned long);
 extern int xiafs_getattr(struct mnt_idmap *, const struct path *path, struct kstat *stat, u32 request_mask, unsigned int flags);
+extern int xiafs_setattr(struct mnt_idmap *idmap, struct dentry *dentry, struct iattr *attr);
 
+extern const struct address_space_operations xiafs_aops;
 extern const struct inode_operations xiafs_file_inode_operations;
 extern const struct inode_operations xiafs_dir_inode_operations;
 extern const struct file_operations xiafs_file_operations;

@@ -182,7 +182,7 @@ const struct file_operations xiafs_file_operations = {
 /* a new setattr function is in the minix source tree. Trying to bring that in
  * and see how it works. */
 
-static int xiafs_setattr(struct mnt_idmap *idmap, struct dentry *dentry, struct iattr *attr)
+int xiafs_setattr(struct mnt_idmap *idmap, struct dentry *dentry, struct iattr *attr)
 {
         struct inode *inode = dentry->d_inode;
         int error;

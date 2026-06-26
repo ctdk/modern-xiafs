@@ -366,7 +366,12 @@ static inline void truncate (struct inode * inode)
 	long iblock;
 
 	iblock = (inode->i_size + sb->s_blocksize -1) >> sb->s_blocksize_bits;
-	block_truncate_page(inode->i_mapping, inode->i_size, get_block);
+
+	if (inode->i_mapping->a_ops == &xiafs_aops)
+		iomap_truncate_page(inode, inode->i_size, NULL,
+			&xiafs_iomap_ops, NULL, NULL);
+	else
+		block_truncate_page(inode->i_mapping, inode->i_size, get_block);
 
 	n = block_to_path(inode, iblock, offsets);
 	if (!n)
