@@ -41,6 +41,7 @@ Vagrant.configure(2) do |config|
   # argument is a set of non-required options.
   # config.vm.synced_folder "../data", "/vagrant_data"
   config.vm.synced_folder "../linux", "/kernel-src/linux", :disabled => false, type: "nfs", nfs_version: 4, nfs_udp: false
+  config.vm.synced_folder "../xfstests-dev", "/xfstests", :disabled => false, type: "nfs", nfs_version: 4, nfs_udp: false
 
   # Provider-specific configuration so you can fine-tune various
   # backing providers for Vagrant. These expose provider-specific options.
