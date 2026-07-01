@@ -17,6 +17,8 @@
 #include "xiafs.h"
 #include <linux/highmem.h>
 #include <linux/pagemap.h>
+#include <linux/buffer_head.h>
+#include <linux/namei.h>
 
 static int add_nondir(struct dentry *dentry, struct inode *inode)
 {
@@ -75,6 +77,71 @@ static int xiafs_create(struct mnt_idmap *idmap, struct inode * dir, struct dent
 	return xiafs_mknod(&nop_mnt_idmap, dir, dentry, mode, 0);
 }
 
+/* Just as the initial iomap implementation for minix was taken from the xiafs
+ * conversion, there are some fixes for issues that came up while making the
+ * minix patches that need to be brought back to xiafs. This is one of them,
+ * mostly lifted straight from the minix equivalent aside from getting to remove
+ * all the places where you need to test what version of the filesystem is being
+ * used.
+ *
+ * Reimplement page_symlink's general logic while avoiding using buffer head
+ * based aops operations like aops->write_begin so things behave better with
+ * the new regime of iomap based aops operations. Cribbing from page_symlink in
+ * fs/namei.c and ext4's ext4_init_symlink_block.
+ */
+
+static int __page_symlink(struct inode *inode, const char *symname, int len)
+{
+	struct super_block *sb = inode->i_sb;
+	struct buffer_head *bh;
+	char *kaddr;
+	int err = 0;
+	block_t *p;
+	sector_t phys;
+
+	phys = xiafs_new_block(inode);
+	if (!phys) {
+		err = -ENOSPC;
+		goto ps_out;
+	}
+
+	p = i_data(inode);
+	*p = cpu_to_block(phys);
+	bh = sb_getblk(sb, phys);
+	if (!bh) {
+		err = -ENOMEM;
+		goto ps_fail;
+	}
+
+	lock_buffer(bh);
+	kaddr = (char *)bh->b_data;
+	memset(kaddr, 0, sb->s_blocksize);
+	memcpy(kaddr, symname, len);
+	inode->i_size = len - 1;
+	set_buffer_uptodate(bh);
+	unlock_buffer(bh);
+
+	mmb_mark_buffer_dirty(bh, &xiafs_i(inode)->i_metadata_bhs);
+	if (inode_needs_sync(inode)) {
+		sync_dirty_buffer(bh);
+		if (buffer_req(bh) && !buffer_uptodate(bh)) {
+			pr_err("i/o error syncing itable block");
+			err = -EIO;
+		}
+
+	}
+
+	mark_inode_dirty(inode);
+	brelse(bh);
+
+ps_out:
+	return err;
+
+ps_fail:
+	xiafs_free_block(inode, phys);
+	goto ps_out;
+}
+
 static int xiafs_symlink(struct mnt_idmap *idmap, struct inode * dir, struct dentry *dentry,
 	  const char * symname)
 {
@@ -92,7 +159,7 @@ static int xiafs_symlink(struct mnt_idmap *idmap, struct inode * dir, struct den
 		goto out;
 
 	xiafs_set_inode(inode, 0);
-	err = page_symlink(inode, symname, i);
+	err = __page_symlink(inode, symname, i);
 	if (err)
 		goto out_fail;
 
@@ -278,6 +345,56 @@ out_old:
 	folio_release_kmap(old_folio, old_de);
 out:
 	return err;
+}
+
+/* The same straight up thievery as in fs/minix/namei.c: stolen verbatim from
+ * ext4_get_link.
+ */
+static void xiafs_free_link(void *bh)
+{
+	brelse(bh);
+}
+
+/* Also taken from the minix iomap fixes.
+ *
+ * Borrowing from ext4_get_link to a degree; since minix (and xiafs in turn)
+ * inodes are significantly simpler, we don't need to do nearly as much as ext4
+ * requires for old-timey ext4 slow links.
+ */
+
+const char *xiafs_get_link(struct dentry *dentry, struct inode *inode,
+		struct delayed_call *callback)
+{
+	struct super_block *sb = inode->i_sb;
+	struct buffer_head *bh;
+	sector_t blk;
+
+	blk = block_to_cpu(*(i_data(inode)));
+
+	/* In the minix patch, I tried dodging the dentry check that ext4 does,
+	 * but it turns out that it's necessary after all. Urk.
+	 */
+	if (!dentry) {
+		bh = sb_getblk(sb, blk);
+		if (!bh || !buffer_uptodate(bh)) {
+			brelse(bh);
+			return ERR_PTR(-ECHILD);
+		}
+	} else {
+		bh = sb_bread(sb, blk);
+		if (IS_ERR(bh))
+			return ERR_CAST(bh);
+		if (!bh) {
+			pr_err("bad symlink on inode %llu", inode->i_ino);
+			return ERR_PTR(-EFSCORRUPTED);
+		}
+	}
+
+	set_delayed_call(callback, xiafs_free_link, bh);
+	nd_terminate_link(bh->b_data, inode->i_size,
+			inode->i_sb->s_blocksize - 1);
+
+	return bh->b_data;
 }
 
 /*

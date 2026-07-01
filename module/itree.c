@@ -13,16 +13,6 @@
 
 enum {DIRECT = 8, DEPTH = 3};
 
-static inline block_t cpu_to_block(unsigned long n)
-{
-	return n;
-}
-
-static inline block_t *i_data(struct inode *inode)
-{
-	return (block_t *)xiafs_i(inode)->i_zone;
-}
-
 /* offsets has DEPTH elements */
 int block_to_path(struct inode * inode, long block, int *offsets)
 {

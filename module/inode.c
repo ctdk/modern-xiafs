@@ -381,7 +381,7 @@ static const struct address_space_operations xiafs_dir_aops = {
 };
 
 static const struct inode_operations xiafs_symlink_inode_operations = {
-	.get_link	= page_get_link,
+	.get_link	= xiafs_get_link,
 	.getattr	= xiafs_getattr,
 	.setattr 	= xiafs_setattr,
 };

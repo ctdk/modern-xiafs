@@ -182,6 +182,18 @@ static inline unsigned long block_to_cpu(block_t n)
 	return n;
 }
 
+/* And these two are used in namei.c, so they've also been moved out of itree.c.
+ */
+static inline block_t cpu_to_block(unsigned long n)
+{
+	return n;
+}
+
+static inline block_t *i_data(struct inode *inode)
+{
+	return (block_t *)xiafs_i(inode)->i_zone;
+}
+
 /* be able to dump out data */
 #define PRINT_OPAQUE_DATA(p)  print_mem((p), sizeof(*(p)))
 static inline void print_mem(void const *vp, size_t n){
@@ -208,6 +220,8 @@ extern int xiafs_delete_entry(struct xiafs_direct*, struct xiafs_direct*, struct
 extern struct xiafs_direct *xiafs_dotdot(struct inode*, struct folio**);
 extern int xiafs_set_link(struct xiafs_direct*, struct folio*, struct inode*);
 extern int xiafs_empty_dir(struct inode*);
+extern const char *xiafs_get_link(struct dentry *dentry, struct inode *inode,
+		struct delayed_call *callback);
 
 extern void xiafs_truncate(struct inode *);
 extern struct inode * xiafs_iget(struct super_block *, unsigned long);
