@@ -206,52 +206,52 @@ static inline void print_mem(void const *vp, size_t n){
 
 #ifdef __KERNEL__
 
-extern struct inode * xiafs_new_inode(const struct inode * dir, umode_t mode, int * error);
-extern void xiafs_free_inode(struct inode * inode);
-extern unsigned long xiafs_count_free_inodes(struct xiafs_sb_info *sbi);
-extern int xiafs_prepare_chunk(struct folio *folio, loff_t pos, unsigned len);
+struct inode * xiafs_new_inode(const struct inode *dir, umode_t mode, int *error);
+void xiafs_free_inode(struct inode *inode);
+unsigned long xiafs_count_free_inodes(struct xiafs_sb_info *sbi);
+int xiafs_prepare_chunk(struct folio *folio, loff_t pos, unsigned len);
 
-extern void xiafs_set_inode(struct inode *, dev_t);
-extern int xiafs_add_link(struct dentry*, struct inode*);
-extern ino_t xiafs_inode_by_name(struct dentry*);
-extern int xiafs_make_empty(struct inode*, struct inode*);
-extern struct xiafs_direct *xiafs_find_entry(struct dentry*, struct folio**, struct xiafs_direct**);
-extern int xiafs_delete_entry(struct xiafs_direct*, struct xiafs_direct*, struct folio*);
-extern struct xiafs_direct *xiafs_dotdot(struct inode*, struct folio**);
-extern int xiafs_set_link(struct xiafs_direct*, struct folio*, struct inode*);
-extern int xiafs_empty_dir(struct inode*);
-extern const char *xiafs_get_link(struct dentry *dentry, struct inode *inode,
+void xiafs_set_inode(struct inode *, dev_t);
+int xiafs_add_link(struct dentry*, struct inode*);
+ino_t xiafs_inode_by_name(struct dentry*);
+int xiafs_make_empty(struct inode*, struct inode*);
+struct xiafs_direct *xiafs_find_entry(struct dentry*, struct folio**, struct xiafs_direct**);
+int xiafs_delete_entry(struct xiafs_direct*, struct xiafs_direct*, struct folio*);
+struct xiafs_direct *xiafs_dotdot(struct inode*, struct folio**);
+int xiafs_set_link(struct xiafs_direct*, struct folio*, struct inode*);
+int xiafs_empty_dir(struct inode*);
+const char *xiafs_get_link(struct dentry *dentry, struct inode *inode,
 		struct delayed_call *callback);
 
-extern void xiafs_truncate(struct inode *);
-extern struct inode * xiafs_iget(struct super_block *, unsigned long);
-extern int xiafs_getattr(struct mnt_idmap *, const struct path *path, struct kstat *stat, u32 request_mask, unsigned int flags);
-extern int xiafs_setattr(struct mnt_idmap *idmap, struct dentry *dentry, struct iattr *attr);
+void xiafs_truncate(struct inode *);
+struct inode * xiafs_iget(struct super_block *, unsigned long);
+int xiafs_getattr(struct mnt_idmap *, const struct path *path, struct kstat *stat, u32 request_mask, unsigned int flags);
+int xiafs_setattr(struct mnt_idmap *idmap, struct dentry *dentry, struct iattr *attr);
+
+int xiafs_fsync(struct file *file, loff_t start, loff_t end, int datasync);
+int xiafs_new_block(struct inode * inode);
+unsigned long xiafs_count_free_blocks(struct xiafs_sb_info * sbi);
+void xiafs_free_block(struct inode *inode, unsigned long block);
+int xiafs_get_block(struct inode *inode, sector_t block, struct buffer_head *bh_result, int create);
+struct xiafs_inode * xiafs_raw_inode(struct super_block *sb, ino_t ino, struct buffer_head **bh);
+unsigned xiafs_blocks(loff_t size, struct super_block *sb);
+
+/* Formerly static functions from itree.c that are now used in more than one
+ * place.
+ */
+int block_to_path(struct inode *inode, long block, int *offsets);
+inline Indirect *get_branch(struct inode *inode, int depth, int *offsets, Indirect *chain, int *err);
+int alloc_branch(struct inode *inode, int num, int *offsets, Indirect *branch);
+int splice_branch(struct inode *inode, Indirect *chain, Indirect *where, int num);
+
+int xiafs_iomap_begin(struct inode *inode, loff_t offset, loff_t length, unsigned flags, struct iomap *iomap, struct iomap *srcmap);
 
 extern const struct address_space_operations xiafs_aops;
 extern const struct inode_operations xiafs_file_inode_operations;
 extern const struct inode_operations xiafs_dir_inode_operations;
 extern const struct file_operations xiafs_file_operations;
 extern const struct file_operations xiafs_dir_operations;
-
-extern int xiafs_fsync(struct file *file, loff_t start, loff_t end, int datasync);
-extern int xiafs_new_block(struct inode * inode);
-extern unsigned long xiafs_count_free_blocks(struct xiafs_sb_info * sbi);
-extern void xiafs_free_block(struct inode * inode, unsigned long block);
-extern int xiafs_get_block(struct inode * inode, sector_t block, struct buffer_head *bh_result, int create);
-extern struct xiafs_inode * xiafs_raw_inode(struct super_block *sb, ino_t ino, struct buffer_head **bh);
-extern unsigned xiafs_blocks(loff_t size, struct super_block *sb);
-
-/* Formerly static functions from itree.c that are now used in more than one
- * place.
- */
-extern int block_to_path(struct inode * inode, long block, int *offsets);
-extern inline Indirect *get_branch(struct inode *inode, int depth, int *offsets, Indirect *chain, int *err);
-extern int alloc_branch(struct inode *inode, int num, int *offsets, Indirect *branch);
-extern int splice_branch(struct inode *inode, Indirect *chain, Indirect *where, int num);
 extern const struct iomap_ops xiafs_iomap_ops;
-
-extern int xiafs_iomap_begin(struct inode *inode, loff_t offset, loff_t length, unsigned flags, struct iomap *iomap, struct iomap *srcmap);
 
 #endif /* __KERNEL__ */
 
